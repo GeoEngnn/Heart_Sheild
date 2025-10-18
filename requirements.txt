@@ -1,0 +1,8 @@
+﻿flask
+pandas
+scikit-learn
+pytesseract
+pillow
+pymongo
+matplotlib
+seaborn
