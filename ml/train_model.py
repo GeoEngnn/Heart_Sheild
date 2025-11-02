@@ -1,92 +1,102 @@
-# ml/train_model.py - COMPLETE FIXED VERSION
+# ml/train_model.py - FIXED FOR CATEGORICAL DATA
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.preprocessing import LabelEncoder
 import joblib
 import os
 
-print("🧠 STARTING HEARTSHIELD ML MODEL TRAINING...")
+print("🧠 STARTING HEARTSHIELD ML MODEL TRAINING WITH REAL DATASET...")
 
-def create_dataset_if_missing():
-    """Create the dataset if it doesn't exist"""
-    # Create realistic heart disease dataset
-    np.random.seed(42)
-    n_samples = 300
-    
-    data = {
-        'age': np.random.randint(29, 77, n_samples),
-        'sex': np.random.randint(0, 2, n_samples),
-        'cp': np.random.randint(0, 4, n_samples),
-        'trestbps': np.random.randint(94, 200, n_samples),
-        'chol': np.random.randint(126, 564, n_samples),
-        'fbs': np.random.randint(0, 2, n_samples),
-        'restecg': np.random.randint(0, 2, n_samples),
-        'thalach': np.random.randint(71, 202, n_samples),
-        'exang': np.random.randint(0, 2, n_samples),
-        'oldpeak': np.round(np.random.uniform(0, 6.2, n_samples), 1),
-        'slope': np.random.randint(0, 3, n_samples),
-        'ca': np.random.randint(0, 4, n_samples),
-        'thal': np.random.randint(0, 4, n_samples),
-    }
-    
-    df = pd.DataFrame(data)
-    
-    # Create target based on realistic medical rules
-    def calculate_heart_disease(row):
-        score = 0
-        if row['age'] > 55: score += 2
-        if row['chol'] > 240: score += 2
-        if row['trestbps'] > 140: score += 2
-        if row['thalach'] < 120: score += 2
-        if row['oldpeak'] > 2: score += 2
-        if row['exang'] == 1: score += 2
-        if row['cp'] > 0: score += 1
-        
-        probability = min(score / 13, 0.95)
-        return 1 if np.random.random() < probability else 0
-    
-    df['heart_disease'] = df.apply(calculate_heart_disease, axis=1)
-    
-    # Ensure we have both classes
-    while df['heart_disease'].sum() < n_samples * 0.3:  # At least 30% heart disease
-        df['heart_disease'] = df.apply(calculate_heart_disease, axis=1)
-    
-    print(f"✅ Created dataset: {df['heart_disease'].sum()} heart disease cases")
-    return df
+# Load YOUR REAL DATASET from the exact path
+dataset_path = r'C:\Users\GEO THOMAS\HeartShield\ml\heartshield_dataset.csv'
 
-# Load or create dataset
 try:
-    df = pd.read_csv('heart_disease_cleaned.csv')
-    print(f"✅ Dataset loaded: {df.shape[0]} patients")
+    # Load your real dataset
+    df = pd.read_csv(dataset_path)
+    print(f"✅ YOUR REAL DATASET LOADED: {df.shape[0]} patients, {df.shape[1]} features")
+    print(f"📋 Dataset columns: {list(df.columns)}")
+    
 except FileNotFoundError:
-    print("📝 Creating new dataset...")
-    df = create_dataset_if_missing()
-    df.to_csv('heart_disease_cleaned.csv', index=False)
-    print("💾 Dataset saved as 'heart_disease_cleaned.csv'")
+    print(f"❌ Dataset not found at: {dataset_path}")
+    print("❌ Please check the file path and make sure the file exists")
+    exit()
+except Exception as e:
+    print(f"❌ Error loading dataset: {e}")
+    exit()
 
-# Check for required columns
-required_columns = ['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
-                   'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal', 'heart_disease']
+# Auto-detect target column
+possible_targets = ['Cardiovascular_Disease', 'HeartDisease', 'heart_disease', 'target', 'Heart_Disease', 'heartdisease', 'HeartDiseaseFlag']
+target_column = None
 
-missing_columns = [col for col in required_columns if col not in df.columns]
-if missing_columns:
-    print(f"❌ Missing columns: {missing_columns}")
-    print("📝 Creating new dataset with correct columns...")
-    df = create_dataset_if_missing()
-    df.to_csv('heart_disease_cleaned.csv', index=False)
+for col in possible_targets:
+    if col in df.columns:
+        target_column = col
+        print(f"🎯 Using target column: '{target_column}'")
+        break
+
+print(f"🎯 FINAL TARGET COLUMN: '{target_column}'")
+
+# Define expected features for NEW dataset
+expected_features = ['Age', 'Height', 'Weight', 'Gender', 'Systolic_BP', 'Diastolic_BP', 
+                   'Cholesterol', 'Glucose', 'Smoking', 'Alcohol_Intake', 'Physical_Activity']
+
+# Check which expected features are available
+available_features = []
+for feature in expected_features:
+    if feature in df.columns:
+        available_features.append(feature)
+    else:
+        print(f"⚠️  Expected feature '{feature}' not found in dataset")
+
+# Add BMI feature
+if 'Height' in df.columns and 'Weight' in df.columns:
+    if 'BMI' not in df.columns:
+        df['BMI'] = df['Weight'] / (df['Height']/100) ** 2
+        print("✅ BMI feature calculated from Height/Weight")
+    available_features.append('BMI')
+else:
+    print("⚠️  Cannot calculate BMI - Height or Weight columns missing")
+
+print(f"🔧 Initial features: {available_features}")
+
+# Handle categorical variables (like 'Gender')
+label_encoders = {}
+categorical_features = []
+
+for feature in available_features:
+    if df[feature].dtype == 'object':  # If it's string data
+        print(f"🔤 Encoding categorical feature: '{feature}'")
+        le = LabelEncoder()
+        df[feature] = le.fit_transform(df[feature])
+        label_encoders[feature] = le
+        categorical_features.append(feature)
+        print(f"   Encoded values: {dict(zip(le.classes_, le.transform(le.classes_)))}")
+
+print(f"✅ Encoded {len(categorical_features)} categorical features: {categorical_features}")
+
+# Prepare features and target
+X = df[available_features]
+y = df[target_column]
 
 print(f"📊 Dataset shape: {df.shape}")
-print(f"🎯 Target distribution: {df['heart_disease'].value_counts().to_dict()}")
+print(f"🎯 Target distribution: {y.value_counts().to_dict()}")
 
-# Prepare features and target - USE CORRECT COLUMN NAME
-X = df[['age', 'sex', 'cp', 'trestbps', 'chol', 'fbs', 'restecg', 
-        'thalach', 'exang', 'oldpeak', 'slope', 'ca', 'thal']]
-y = df['heart_disease']  # Use 'heart_disease' NOT 'target'
+# Check for missing values
+if X.isnull().sum().sum() > 0:
+    print("⚠️  Missing values detected. Handling missing values...")
+    # Fill numeric columns with median
+    for col in X.columns:
+        if X[col].dtype in ['int64', 'float64']:
+            X[col].fillna(X[col].median(), inplace=True)
+    print("✅ Missing values handled")
 
-print(f"🔧 Features: {list(X.columns)}")
-print(f"📈 Samples: {X.shape[0]}, Features: {X.shape[1]}")
+# Check data types
+print(f"🔍 Final data types:")
+for col in X.columns:
+    print(f"   {col}: {X[col].dtype}")
 
 # Split data
 X_train, X_test, y_train, y_test = train_test_split(
@@ -113,10 +123,14 @@ accuracy = accuracy_score(y_test, y_pred)
 
 print(f"✅ Model Accuracy: {accuracy:.3f} ({accuracy*100:.1f}%)")
 
-# Save model - IN CURRENT DIRECTORY
+# Save model and encoders
 model_filename = 'heart_disease_model.pkl'
 joblib.dump(model, model_filename)
+joblib.dump(available_features, 'feature_names.pkl')
+joblib.dump(label_encoders, 'label_encoders.pkl')  # Save encoders for prediction
 print(f"💾 Model saved as '{model_filename}'")
+print(f"💾 Feature names saved as 'feature_names.pkl'")
+print(f"💾 Label encoders saved as 'label_encoders.pkl'")
 
 # Verify model can be loaded
 try:
@@ -129,7 +143,7 @@ except Exception as e:
 
 # Feature importance
 feature_importance = pd.DataFrame({
-    'feature': X.columns,
+    'feature': available_features,
     'importance': model.feature_importances_
 }).sort_values('importance', ascending=False)
 
