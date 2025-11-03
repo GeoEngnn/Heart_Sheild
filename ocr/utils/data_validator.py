@@ -1,29 +1,42 @@
-# ocr/utils/data_validator.py
+# ocr/utils/data_validator.py - UPDATED FOR NEW DATASET
 import logging
 from typing import Dict, Any, List
 
 class DataValidator:
     """
-    Validates extracted medical data and prepares it for prediction
+    UPDATED: Validates extracted medical data for NEW DATASET FEATURES
     Implements graceful degradation for incomplete data
     """
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.critical_params = ['age', 'cholesterol', 'blood_pressure']
-        self.optional_params = ['heart_rate', 'glucose', 'hdl', 'ldl']
-        self.logger.info("✅ DataValidator initialized")
+        
+        # UPDATED: Critical parameters for new model
+        self.critical_params = ['age', 'cholesterol', 'systolic_bp', 'diastolic_bp']
+        self.important_params = ['height', 'weight', 'glucose', 'gender']
+        self.lifestyle_params = ['smoking', 'alcohol_intake', 'physical_activity']
+        
+        self.logger.info("✅ DataValidator UPDATED for new dataset features")
     
     def validate_and_prepare_prediction(self, extracted_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Main validation method with graceful degradation
+        UPDATED: Main validation method for new features
         """
-        self.logger.info("🛡️ Starting data validation...")
+        self.logger.info("🛡️ Starting data validation for NEW FEATURES...")
         
         # Clean the extracted data
         cleaned_data = self._clean_extracted_data(extracted_data)
         
-        # Assess data completeness
+        # Calculate BMI if height and weight are available
+        if 'height' in cleaned_data and 'weight' in cleaned_data:
+            try:
+                height_m = cleaned_data['height'] / 100
+                cleaned_data['bmi'] = cleaned_data['weight'] / (height_m ** 2)
+                self.logger.info(f"✅ BMI calculated: {cleaned_data['bmi']:.1f}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ BMI calculation failed: {e}")
+        
+        # Assess data completeness for new features
         completeness = self.assess_completeness(cleaned_data)
         self.logger.info(f"📊 Data completeness: {completeness}")
         
@@ -38,12 +51,14 @@ class DataValidator:
             return self._handle_poor_data(cleaned_data)
     
     def assess_completeness(self, extracted_data: Dict[str, Any]) -> str:
-        """Assess how complete the extracted data is"""
+        """UPDATED: Assess completeness for new feature set"""
         missing_critical = self.get_missing_critical(extracted_data)
+        available_important = self.get_available_important(extracted_data)
         
-        if not missing_critical:
+        # New completeness logic
+        if not missing_critical and available_important >= 3:
             return 'EXCELLENT'
-        elif len(missing_critical) == 1:
+        elif len(missing_critical) <= 1 and available_important >= 2:
             return 'GOOD'
         elif len(missing_critical) <= 2:
             return 'MINIMAL'
@@ -55,57 +70,70 @@ class DataValidator:
         return [param for param in self.critical_params 
                 if param not in extracted_data or not extracted_data[param]]
     
+    def get_available_important(self, extracted_data: Dict[str, Any]) -> int:
+        """Count available important parameters"""
+        return sum(1 for param in self.important_params 
+                  if param in extracted_data and extracted_data[param])
+    
     def _clean_extracted_data(self, extracted_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Clean and normalize extracted data"""
+        """UPDATED: Clean and normalize extracted data for new features"""
         cleaned = {}
         
         for key, value in extracted_data.items():
             if value and value != 'None' and value != 'null':
-                # Convert age to integer
-                if key == 'age' and str(value).isdigit():
-                    cleaned[key] = int(value)
-                # Validate blood pressure format
-                elif key == 'blood_pressure':
-                    bp_cleaned = self._clean_blood_pressure(value)
-                    if bp_cleaned:
-                        cleaned[key] = bp_cleaned
                 # Convert numeric values
-                elif key in ['cholesterol', 'heart_rate', 'glucose', 'hdl', 'ldl']:
+                if key in ['age', 'height', 'weight', 'cholesterol', 'glucose', 'heart_rate']:
+                    if str(value).replace('.', '').isdigit():
+                        cleaned[key] = float(value) if '.' in str(value) else int(value)
+                
+                # Handle blood pressure components
+                elif key in ['systolic_bp', 'diastolic_bp']:
+                    if str(value).isdigit():
+                        bp_value = int(value)
+                        if self._is_valid_bp_component(key, bp_value):
+                            cleaned[key] = bp_value
+                
+                # Handle lifestyle factors (convert to binary)
+                elif key in ['smoking', 'alcohol_intake', 'physical_activity']:
                     if str(value).isdigit():
                         cleaned[key] = int(value)
+                    elif isinstance(value, str):
+                        # Convert yes/no to binary
+                        if value.lower() in ['y', 'yes', '1', 'true']:
+                            cleaned[key] = 1
+                        elif value.lower() in ['n', 'no', '0', 'false']:
+                            cleaned[key] = 0
+                
+                # Handle gender
+                elif key == 'gender':
+                    gender_str = str(value).lower()
+                    if gender_str in ['m', 'male', 'f', 'female']:
+                        cleaned[key] = 'Male' if gender_str in ['m', 'male'] else 'Female'
+                
                 else:
                     cleaned[key] = value
         
         return cleaned
     
-    def _clean_blood_pressure(self, bp_value: Any) -> str:
-        """Clean and validate blood pressure values"""
-        if not bp_value:
-            return None
-        
-        bp_str = str(bp_value)
-        
-        # Handle various BP formats
-        if '/' in bp_str:
-            parts = bp_str.split('/')
-            if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-                systolic, diastolic = int(parts[0]), int(parts[1])
-                # Validate reasonable BP ranges
-                if 70 <= systolic <= 250 and 40 <= diastolic <= 150:
-                    return f"{systolic}/{diastolic}"
-        
-        return None
+    def _is_valid_bp_component(self, bp_type: str, value: int) -> bool:
+        """Validate blood pressure components"""
+        if bp_type == 'systolic_bp':
+            return 70 <= value <= 250
+        elif bp_type == 'diastolic_bp':
+            return 40 <= value <= 150
+        return False
     
     def _handle_excellent_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle case when all critical data is available"""
-        self.logger.info("🎉 All critical data available for prediction")
+        self.logger.info("🎉 All critical data available for NEW MODEL prediction")
         return {
             'status': 'READY_FOR_PREDICTION',
-            'message': 'All critical data extracted successfully!',
-            'data': data,
+            'message': 'All critical data extracted successfully for new model!',
+            'validated_data': data,
             'prediction_confidence': 'HIGH',
             'missing_fields': [],
-            'risk_insights': self._extract_risk_insights(data)
+            'risk_insights': self._extract_risk_insights(data),
+            'model_compatibility': 'FULL'
         }
     
     def _handle_good_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -114,53 +142,66 @@ class DataValidator:
         self.logger.info(f"⚠️ Some data missing, but can proceed: {missing}")
         
         return {
-            'status': 'READY_WITH_WARNING',
-            'message': f'We can provide prediction, but {missing[0]} is missing',
-            'data': data,
+            'status': 'READY_FOR_PREDICTION',
+            'message': f'Sufficient data for prediction, but {missing[0]} is estimated',
+            'validated_data': data,
             'missing_fields': missing,
             'prediction_confidence': 'MEDIUM',
             'risk_insights': self._extract_risk_insights(data),
+            'model_compatibility': 'PARTIAL',
             'suggestion': 'Prediction will use estimated values for missing fields'
         }
     
     def _handle_minimal_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle case when minimal data is available"""
         missing = self.get_missing_critical(data)
-        self.logger.warning(f"🚧 Insufficient data for prediction: {missing}")
+        self.logger.warning(f"🚧 Limited data for prediction: {missing}")
         
         return {
-            'status': 'PARTIAL_INSIGHTS',
-            'message': 'Insufficient for full prediction, but here are risk factors we identified:',
-            'identified_risks': self._extract_risk_insights(data),
-            'available_data': data,
+            'status': 'READY_WITH_WARNING',
+            'message': 'Limited data available, prediction may be less accurate',
+            'validated_data': data,
             'missing_critical': missing,
             'prediction_confidence': 'LOW',
-            'suggestion': 'Please provide lab reports with cholesterol and blood pressure for complete analysis'
+            'risk_insights': self._extract_risk_insights(data),
+            'model_compatibility': 'LIMITED',
+            'suggestion': 'Please provide documents with blood pressure and cholesterol for better accuracy'
         }
     
     def _handle_poor_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Handle case when very little data is available"""
-        self.logger.error("❌ Cannot process - insufficient medical data")
+        self.logger.error("❌ Cannot process - insufficient medical data for new model")
         
         return {
             'status': 'CANNOT_PROCESS',
-            'message': 'We could not extract sufficient medical data from this document',
+            'message': 'We could not extract sufficient medical data for the new prediction model',
             'available_data': data,
             'prediction_confidence': 'NONE',
-            'suggestion': 'Try uploading lab reports, discharge summaries, or clinic notes with clear medical values'
+            'model_compatibility': 'POOR',
+            'suggestion': 'Try uploading lab reports with blood pressure, cholesterol, height, and weight measurements'
         }
     
     def _extract_risk_insights(self, extracted_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract risk insights from available data"""
+        """UPDATED: Extract risk insights from available data for new features"""
         insights = {}
         
         # Age-based insights
         if 'age' in extracted_data:
             age = extracted_data['age']
-            if age > 45:
-                insights['age_risk'] = 'Increased risk due to age > 45'
-            elif age > 60:
-                insights['age_risk'] = 'Higher risk due to age > 60'
+            if age > 55:
+                insights['age_risk'] = 'Increased risk due to age > 55'
+            elif age > 45:
+                insights['age_risk'] = 'Moderate risk due to age > 45'
+        
+        # Blood pressure insights
+        systolic = extracted_data.get('systolic_bp')
+        diastolic = extracted_data.get('diastolic_bp')
+        
+        if systolic and diastolic:
+            if systolic > 140 or diastolic > 90:
+                insights['bp_risk'] = 'High blood pressure detected'
+            elif systolic > 130 or diastolic > 85:
+                insights['bp_risk'] = 'Elevated blood pressure'
         
         # Cholesterol insights
         if 'cholesterol' in extracted_data:
@@ -168,17 +209,22 @@ class DataValidator:
             if chol > 240:
                 insights['cholesterol_risk'] = 'High cholesterol level (>240)'
             elif chol > 200:
-                insights['cholesterol_risk'] = 'Borderline high cholesterol (200-239)'
+                insights['cholesterol_risk'] = 'Borderline high cholesterol'
         
-        # Blood pressure insights
-        if 'blood_pressure' in extracted_data:
-            bp = extracted_data['blood_pressure']
-            if '/' in bp:
-                systolic = int(bp.split('/')[0])
-                if systolic > 140:
-                    insights['bp_risk'] = 'Elevated systolic blood pressure (>140)'
-                elif systolic > 130:
-                    insights['bp_risk'] = 'High-normal blood pressure (130-139)'
+        # BMI insights
+        if 'bmi' in extracted_data:
+            bmi = extracted_data['bmi']
+            if bmi > 30:
+                insights['bmi_risk'] = 'Obese (BMI > 30)'
+            elif bmi > 25:
+                insights['bmi_risk'] = 'Overweight (BMI 25-30)'
+        
+        # Lifestyle insights
+        if extracted_data.get('smoking') == 1:
+            insights['lifestyle_risk'] = 'Smoking increases cardiovascular risk'
+        
+        if extracted_data.get('physical_activity') == 0:
+            insights['activity_risk'] = 'Physical inactivity increases risk'
         
         # General insights
         if not insights:
@@ -190,20 +236,27 @@ class DataValidator:
     
     def prepare_for_ml_model(self, validated_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Convert validated OCR data to format expected by ML model
+        UPDATED: Convert validated OCR data to format expected by NEW ML model
         """
-        if validated_data.get('status') != 'READY_FOR_PREDICTION':
-            return None
+        data = validated_data.get('validated_data', {})
         
-        data = validated_data['data']
+        # Prepare ML input with new feature mapping
         ml_input = {}
         
-        # Direct mappings from OCR to ML features
+        # Direct mappings from OCR to NEW ML features
         mapping = {
-            'age': 'age',
-            'cholesterol': 'chol',
-            'heart_rate': 'thalach', 
-            'glucose': 'fbs'
+            'age': 'Age',
+            'height': 'Height',
+            'weight': 'Weight', 
+            'gender': 'Gender',
+            'systolic_bp': 'Systolic_BP',
+            'diastolic_bp': 'Diastolic_BP',
+            'cholesterol': 'Cholesterol',
+            'glucose': 'Glucose',
+            'smoking': 'Smoking',
+            'alcohol_intake': 'Alcohol_Intake',
+            'physical_activity': 'Physical_Activity',
+            'bmi': 'BMI'
         }
         
         # Map available fields
@@ -211,32 +264,64 @@ class DataValidator:
             if source_key in data:
                 ml_input[target_key] = data[source_key]
         
-        # Handle blood pressure (extract systolic)
-        if 'blood_pressure' in data:
-            bp_parts = data['blood_pressure'].split('/')
-            if len(bp_parts) == 2:
-                ml_input['trestbps'] = int(bp_parts[0])  # Systolic BP
+        # Calculate BMI if not provided but height/weight available
+        if 'BMI' not in ml_input and 'Height' in ml_input and 'Weight' in ml_input:
+            try:
+                height_m = ml_input['Height'] / 100
+                ml_input['BMI'] = ml_input['Weight'] / (height_m ** 2)
+            except:
+                ml_input['BMI'] = 24.2  # Default BMI
         
         # Set default values for missing required fields
         defaults = {
-            'sex': 1,           # Default to male
-            'cp': 0,            # No chest pain
-            'restecg': 0,       # Normal ECG
-            'exang': 0,         # No exercise angina
-            'oldpeak': 1.0,     # Default ST depression
-            'slope': 1,         # Upsloping
-            'ca': 0,            # 0 major vessels
-            'thal': 3           # Normal
+            'Age': 50,
+            'Height': 170,
+            'Weight': 70,
+            'Gender': 'Male',
+            'Systolic_BP': 120,
+            'Diastolic_BP': 80,
+            'Cholesterol': 200,
+            'Glucose': 100,
+            'Smoking': 0,
+            'Alcohol_Intake': 0,
+            'Physical_Activity': 1,
+            'BMI': 24.2
         }
         
         # Apply defaults only for missing fields
         for field, default_value in defaults.items():
             if field not in ml_input:
                 ml_input[field] = default_value
+                self.logger.info(f"⚠️ Using default for {field}: {default_value}")
         
-        # Convert fasting blood sugar to binary (1 if > 120)
-        if 'fbs' in ml_input:
-            ml_input['fbs'] = 1 if ml_input['fbs'] > 120 else 0
+        # Ensure Gender is properly formatted
+        if 'Gender' in ml_input:
+            gender = str(ml_input['Gender']).lower()
+            if gender in ['m', 'male']:
+                ml_input['Gender'] = 'Male'
+            elif gender in ['f', 'female']:
+                ml_input['Gender'] = 'Female'
+            else:
+                ml_input['Gender'] = 'Male'  # Default
         
-        self.logger.info(f"🧠 ML Input prepared: {ml_input}")
+        # Ensure lifestyle factors are integers
+        lifestyle_fields = ['Smoking', 'Alcohol_Intake', 'Physical_Activity']
+        for field in lifestyle_fields:
+            if field in ml_input:
+                try:
+                    ml_input[field] = int(ml_input[field])
+                except (ValueError, TypeError):
+                    ml_input[field] = 0  # Default to no
+        
+        self.logger.info(f"🧠 NEW ML Input prepared: {list(ml_input.keys())}")
         return ml_input
+    
+    def get_new_model_requirements(self) -> Dict[str, Any]:
+        """Return requirements for the new ML model"""
+        return {
+            'critical_features': self.critical_params,
+            'important_features': self.important_params,
+            'lifestyle_features': self.lifestyle_params,
+            'all_required': ['Age', 'Height', 'Weight', 'Gender', 'Systolic_BP', 'Diastolic_BP', 
+                           'Cholesterol', 'Glucose', 'Smoking', 'Alcohol_Intake', 'Physical_Activity', 'BMI']
+        }

@@ -1,4 +1,4 @@
-# ocr/parsers/lab_report_parser.py
+# ocr/parsers/lab_report_parser.py - UPDATED FOR NEW DATASET
 import re
 import pytesseract
 from PIL import Image
@@ -7,70 +7,73 @@ from typing import Dict, Any
 
 class LabReportParser:
     """
-    SUPER-ENHANCED parser for laboratory reports and blood test results
+    UPDATED parser for laboratory reports - NOW WITH NEW DATASET FEATURES
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
         
-        # SUPER-ENHANCED MEDICAL PATTERNS - Maximum coverage!
+        # UPDATED MEDICAL PATTERNS FOR NEW FEATURES
         self.medical_patterns = {
             'age': [
                 r'age[\s:]*(\d+)',
                 r'age[\s:]*(\d+)\s*years',
                 r'patient[\s:]*.*age[\s:]*(\d+)',
-                r'dob[^:]*age[\s:]*(\d+)',  # Date of birth context
-                r'age\s*[=:]?\s*(\d+)'  # Handles "Age = 45"
+                r'dob[^:]*age[\s:]*(\d+)',
+                r'age\s*[=:]?\s*(\d+)'
             ],
-            'cholesterol': [
-                # Basic patterns
-                r'chol[\s:]*(\d+)',
-                r'cholesterol[\s:]*(\d+)',
-                r'total chol[\s:]*(\d+)', 
-                r'total cholesterol[\s:]*(\d+)',
-                
-                # With punctuation variations
-                r'chol\.?[\s:]*(\d+)',
-                r'cholesterol\.?[\s:]*(\d+)',
-                
-                # Common abbreviations and typos
-                r'cholest?[\s:]*(\d+)',
-                r'chol[\s]*esterol[\s:]*(\d+)',
-                
-                # With units and labels
-                r'cholesterol[\s:]*(\d+)\s*mg/dl',
-                r'chol[\s:]*(\d+)\s*mg',
-                r'total[\s]+chol[\s:]*(\d+)',
-                
-                # OCR error resistant patterns
-                r'ch[o0]l[\s:]*(\d+)',  # Handles o/0 confusion
-                r'cholesterol[\s:]*[^\d]*(\d+)',  # Handles extra characters
-                r'cholest[ae]rol[\s:]*(\d+)',  # Handles a/e OCR errors
-                
-                # Very permissive pattern as last resort
-                r'chol[^\d]{0,5}(\d{2,4})',  # Matches "chol" followed by numbers within 2-4 digits
-                
-                # Context-based patterns
-                r'cholesterol\s*result[\s:]*(\d+)',
-                r'chol\s*level[\s:]*(\d+)',
-                
-                # Final fallback - look for numbers near "chol"
-                r'chol[^\d]*?(\d{2,4})(?=\s*(mg|$))'
+            'height': [
+                r'height[\s:]*(\d+)\s*cm',
+                r'height[\s:]*(\d+)',
+                r'ht[\s:]*(\d+)\s*cm',
+                r'height[\s:]*(\d+)\s*centimeters',
+                r'height\s*[=:]?\s*(\d+)\s*cm',
+                r'(\d+)\s*cm\s*height',  # "170 cm height"
+                r'height[^\d]{0,10}(\d{3})'  # Aggressive search
             ],
-            'blood_pressure': [
+            'weight': [
+                r'weight[\s:]*(\d+)\s*kg',
+                r'weight[\s:]*(\d+)',
+                r'wt[\s:]*(\d+)\s*kg',
+                r'weight[\s:]*(\d+)\s*kilograms',
+                r'weight\s*[=:]?\s*(\d+)\s*kg',
+                r'(\d+)\s*kg\s*weight',  # "70 kg weight"
+                r'weight[^\d]{0,10}(\d{2,3})'  # Aggressive search
+            ],
+            'gender': [
+                r'gender[\s:]*([mf])',
+                r'sex[\s:]*([mf])',
+                r'patient[\s:]*.*([mf])ale',
+                r'([mf])/f',  # M/F format
+                r'gender\s*[=:]?\s*(male|female)',
+                r'sex\s*[=:]?\s*(male|female)'
+            ],
+            'systolic_bp': [
                 r'bp[\s:]*(\d+)/(\d+)',
                 r'blood pressure[\s:]*(\d+)/(\d+)',
-                r'blood[\s:]*pressure[\s:]*(\d+)/(\d+)',
-                r'pressure[\s:]*(\d+)/(\d+)',
-                r'b[\s]?p[\s:]*(\d+)/(\d+)',  # Handles "b p: 120/80"
-                r'bp\s*[=:]?\s*(\d+)/(\d+)'  # Handles "BP = 120/80"
+                r'systolic[\s:]*(\d+)',
+                r'sys[\s:]*(\d+)',
+                r'blood[\s:]*pressure[\s:]*(\d+)\s*/\s*\d+',  # Capture systolic only
+                r'(\d{2,3})/\d+\s*mmhg',  # "120/80 mmHg" - capture 120
+                r'systolic\s*[=:]?\s*(\d+)'
             ],
-            'heart_rate': [
-                r'hr[\s:]*(\d+)',
-                r'heart rate[\s:]*(\d+)',
-                r'heart[\s:]*rate[\s:]*(\d+)',
-                r'pulse[\s:]*(\d+)',
-                r'pulse rate[\s:]*(\d+)',
-                r'heart\s*rate\s*[=:]?\s*(\d+)'
+            'diastolic_bp': [
+                r'bp[\s:]*\d+/(\d+)',
+                r'blood pressure[\s:]*\d+/(\d+)',
+                r'diastolic[\s:]*(\d+)',
+                r'dias[\s:]*(\d+)',
+                r'blood[\s:]*pressure[\s:]*\d+\s*/\s*(\d+)',  # Capture diastolic only
+                r'\d+/(\d+)\s*mmhg',  # "120/80 mmHg" - capture 80
+                r'diastolic\s*[=:]?\s*(\d+)'
+            ],
+            'cholesterol': [
+                r'chol[\s:]*(\d+)',
+                r'cholesterol[\s:]*(\d+)',
+                r'total chol[\s:]*(\d+)',
+                r'total cholesterol[\s:]*(\d+)',
+                r'chol\.?[\s:]*(\d+)',
+                r'cholesterol[\s:]*(\d+)\s*mg/dl',
+                r'chol[\s:]*(\d+)\s*mg',
+                r'ch[o0]l[\s:]*(\d+)'
             ],
             'glucose': [
                 r'glucose[\s:]*(\d+)',
@@ -81,25 +84,42 @@ class LabReportParser:
                 r'glucose\s*level[\s:]*(\d+)',
                 r'blood\s*glucose[\s:]*(\d+)'
             ],
-            'hdl': [
-                r'hdl[\s:]*(\d+)',
-                r'hdl cholesterol[\s:]*(\d+)',
-                r'hdl[\s:]*(\d+)\s*mg/dl',
-                r'high-density lipoprotein[\s:]*(\d+)'
+            'heart_rate': [
+                r'hr[\s:]*(\d+)',
+                r'heart rate[\s:]*(\d+)',
+                r'pulse[\s:]*(\d+)',
+                r'pulse rate[\s:]*(\d+)',
+                r'heart\s*rate\s*[=:]?\s*(\d+)'
             ],
-            'ldl': [
-                r'ldl[\s:]*(\d+)', 
-                r'ldl cholesterol[\s:]*(\d+)',
-                r'ldl[\s:]*(\d+)\s*mg/dl',
-                r'low-density lipoprotein[\s:]*(\d+)'
+            'smoking': [
+                r'smoking[\s:]*([yn])',
+                r'smoker[\s:]*([yn])',
+                r'tobacco[\s:]*([yn])',
+                r'smoking\s*status[\s:]*([yn])',
+                r'smoking[\s:]*(yes|no)',
+                r'smoker[\s:]*(yes|no)'
+            ],
+            'alcohol_intake': [
+                r'alcohol[\s:]*([yn])',
+                r'drinking[\s:]*([yn])',
+                r'alcohol[\s:]*(yes|no)',
+                r'drinking[\s:]*(yes|no)',
+                r'alcohol\s*use[\s:]*([yn])'
+            ],
+            'physical_activity': [
+                r'exercise[\s:]*([yn])',
+                r'physical[\s:]*activity[\s:]*([yn])',
+                r'activity[\s:]*level[\s:]*([yn])',
+                r'exercise[\s:]*(yes|no)',
+                r'active[\s:]*lifestyle[\s:]*([yn])'
             ]
         }
         
-        self.logger.info("🎯 SUPER-ENHANCED LabReportParser initialized with maximum pattern coverage!")
+        self.logger.info("🎯 UPDATED LabReportParser initialized for NEW DATASET FEATURES!")
     
     def extract_data(self, image_path: str) -> Dict[str, Any]:
         """
-        Extract medical data from lab report images using super-enhanced pattern matching
+        Extract medical data from lab report images - UPDATED FOR NEW FEATURES
         """
         self.logger.info(f"🔬 Processing lab report: {image_path}")
         
@@ -108,29 +128,35 @@ class LabReportParser:
             text = self._extract_text(image_path)
             self.logger.info(f"📝 Raw text extracted: {len(text)} characters")
             
-            # DEBUG: Log what patterns are matching
-            self._debug_pattern_matching(text)
-            
-            # Parse medical data using enhanced pattern matching
+            # Parse medical data using updated pattern matching
             extracted_data = {}
             for field, patterns in self.medical_patterns.items():
                 value = self._extract_field_enhanced(text, patterns, field)
                 if value:
                     extracted_data[field] = value
             
-            # Additional smart extraction for common medical formats
-            if 'blood_pressure' not in extracted_data:
-                bp_casual = self._extract_casual_bp(text)
-                if bp_casual:
-                    extracted_data['blood_pressure'] = bp_casual
-                    self.logger.info("✅ Casual BP extraction successful")
+            # Calculate BMI if height and weight are available
+            if 'height' in extracted_data and 'weight' in extracted_data:
+                try:
+                    height_cm = float(extracted_data['height'])
+                    weight_kg = float(extracted_data['weight'])
+                    if height_cm > 0 and weight_kg > 0:
+                        height_m = height_cm / 100
+                        bmi = weight_kg / (height_m ** 2)
+                        extracted_data['bmi'] = round(bmi, 1)
+                        self.logger.info(f"✅ BMI calculated: {bmi:.1f}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ Could not calculate BMI: {e}")
             
-            # Final cholesterol fallback - aggressive search
-            if 'cholesterol' not in extracted_data:
-                chol_fallback = self._aggressive_cholesterol_search(text)
-                if chol_fallback:
-                    extracted_data['cholesterol'] = chol_fallback
-                    self.logger.info("✅ Aggressive cholesterol search successful")
+            # Convert gender to standardized format
+            if 'gender' in extracted_data:
+                extracted_data['gender'] = self._standardize_gender(extracted_data['gender'])
+            
+            # Convert lifestyle factors to binary (0/1)
+            lifestyle_fields = ['smoking', 'alcohol_intake', 'physical_activity']
+            for field in lifestyle_fields:
+                if field in extracted_data:
+                    extracted_data[field] = self._convert_to_binary(extracted_data[field])
             
             self.logger.info(f"✅ Lab report parsed: {len(extracted_data)} fields found")
             self.logger.info(f"📋 Extracted fields: {list(extracted_data.keys())}")
@@ -147,119 +173,134 @@ class LabReportParser:
             image = Image.open(image_path)
             text = pytesseract.image_to_string(image)
             self.logger.debug(f"Raw OCR text: {text}")
-            return text.lower()  # Convert to lowercase for easier matching
+            return text.lower()
         except Exception as e:
             self.logger.error(f"❌ OCR extraction failed: {e}")
             return ""
     
     def _extract_field_enhanced(self, text: str, patterns: list, field_name: str):
         """
-        Enhanced field extraction - tries multiple patterns with priority
+        Enhanced field extraction for new features
         """
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
                 self.logger.debug(f"✅ Pattern matched for {field_name}: {pattern}")
                 
-                if field_name == 'blood_pressure':
-                    # Handle blood pressure format
-                    systolic, diastolic = match.group(1), match.group(2)
-                    if self._is_valid_bp(systolic, diastolic):
-                        return f"{systolic}/{diastolic}"
+                if field_name in ['systolic_bp', 'diastolic_bp']:
+                    # Handle blood pressure components
+                    value = match.group(1)
+                    if self._is_valid_bp_component(field_name, value):
+                        return value
                 
-                elif field_name in ['age', 'cholesterol', 'heart_rate', 'glucose', 'hdl', 'ldl']:
-                    # Return the first captured group for numeric values
+                elif field_name in ['height', 'weight']:
+                    # Handle height/weight with validation
                     value = match.group(1)
                     if value and value.isdigit():
-                        # Validate reasonable ranges
+                        if self._is_valid_anthropometric(field_name, value):
+                            return value
+                
+                elif field_name == 'gender':
+                    # Handle gender extraction
+                    value = match.group(1).lower()
+                    if len(value) == 1:  # Single char (m/f)
+                        return value
+                    else:  # Full word (male/female)
+                        return value[0]  # Return first char
+                
+                elif field_name in ['smoking', 'alcohol_intake', 'physical_activity']:
+                    # Handle lifestyle factors
+                    value = match.group(1).lower()
+                    return value
+                
+                elif field_name in ['age', 'cholesterol', 'glucose', 'heart_rate']:
+                    # Handle numeric medical values
+                    value = match.group(1)
+                    if value and value.isdigit():
                         if self._is_valid_medical_value(field_name, value):
                             return value
                 
                 else:
-                    # For other fields, return the first match
+                    # For other fields
                     return match.group(1)
         
         self.logger.debug(f"❌ No pattern matched for {field_name}")
         return None
     
-    def _aggressive_cholesterol_search(self, text: str):
-        """
-        SUPER-AGGRESSIVE cholesterol search as final fallback
-        """
-        # Look for any 3-digit number near cholesterol-related terms
-        aggressive_patterns = [
-            r'chol[^\d]{0,10}(\d{3})',  # "chol" followed by 3-digit number within 10 chars
-            r'cholest[^\d]{0,10}(\d{3})',
-            r'lipid[^\d]{0,15}(\d{3})',  # "lipid" context
-            r'(\d{3})(?=\s*(mg|mg/dl|mg\s*dl))'  # 3-digit number followed by mg units
-        ]
-        
-        for pattern in aggressive_patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                value = match.group(1)
-                if value.isdigit() and 100 <= int(value) <= 400:  # Reasonable cholesterol range
-                    self.logger.info(f"🎯 Aggressive cholesterol found: {value}")
-                    return value
-        
-        return None
+    def _standardize_gender(self, gender_input: str) -> str:
+        """Convert gender input to standardized format"""
+        gender_map = {
+            'm': 'Male', 'male': 'Male',
+            'f': 'Female', 'female': 'Female'
+        }
+        standardized = gender_map.get(gender_input.lower(), 'Male')  # Default to Male
+        self.logger.info(f"🔤 Gender standardized: {gender_input} → {standardized}")
+        return standardized
     
-    def _extract_casual_bp(self, text: str):
-        """
-        Extract blood pressure mentioned in casual format like "120/80"
-        """
-        bp_pattern = r'(\d{2,3})\s*/\s*(\d{2,3})'
-        matches = re.findall(bp_pattern, text)
-        
-        for systolic, diastolic in matches:
-            if self._is_valid_bp(systolic, diastolic):
-                self.logger.debug(f"✅ Casual BP found: {systolic}/{diastolic}")
-                return f"{systolic}/{diastolic}"
-        
-        return None
+    def _convert_to_binary(self, value: str) -> int:
+        """Convert yes/no to binary (1/0)"""
+        binary_map = {
+            'y': 1, 'yes': 1, '1': 1,
+            'n': 0, 'no': 0, '0': 0
+        }
+        result = binary_map.get(value.lower(), 0)  # Default to 0 (No)
+        self.logger.info(f"🔢 Binary conversion: {value} → {result}")
+        return result
     
-    def _is_valid_bp(self, systolic: str, diastolic: str) -> bool:
-        """
-        Validate if the numbers are reasonable blood pressure values
-        """
+    def _is_valid_bp_component(self, field: str, value: str) -> bool:
+        """Validate blood pressure components"""
         try:
-            sys_val = int(systolic)
-            dia_val = int(diastolic)
-            
-            # Reasonable BP ranges
-            return (70 <= sys_val <= 250) and (40 <= dia_val <= 150)
+            num_val = int(value)
+            if field == 'systolic_bp':
+                return 70 <= num_val <= 250
+            elif field == 'diastolic_bp':
+                return 40 <= num_val <= 150
+            return False
+        except:
+            return False
+    
+    def _is_valid_anthropometric(self, field: str, value: str) -> bool:
+        """Validate height and weight values"""
+        try:
+            num_val = int(value)
+            if field == 'height':
+                return 100 <= num_val <= 250  # 100cm to 250cm
+            elif field == 'weight':
+                return 30 <= num_val <= 200   # 30kg to 200kg
+            return False
         except:
             return False
     
     def _is_valid_medical_value(self, field: str, value: str) -> bool:
-        """
-        Validate if extracted medical values are reasonable
-        """
+        """Validate if extracted medical values are reasonable"""
         try:
             num_val = int(value)
             
             validation_ranges = {
                 'age': (1, 120),
                 'cholesterol': (100, 400),
-                'heart_rate': (40, 200),
                 'glucose': (50, 300),
-                'hdl': (20, 100),
-                'ldl': (50, 300)
+                'heart_rate': (40, 200)
             }
             
             if field in validation_ranges:
                 min_val, max_val = validation_ranges[field]
                 return min_val <= num_val <= max_val
             
-            return True  # No validation for other fields
-            
+            return True
         except:
             return False
     
+    def get_supported_features(self) -> list:
+        """Return list of supported features for the new dataset"""
+        return [
+            'age', 'height', 'weight', 'gender', 'systolic_bp', 'diastolic_bp',
+            'cholesterol', 'glucose', 'heart_rate', 'smoking', 'alcohol_intake', 
+            'physical_activity', 'bmi'
+        ]
+    
     def _debug_pattern_matching(self, text: str):
-        """
-        Debug method to see what patterns are matching
-        """
+        """Debug method to see what patterns are matching"""
         self.logger.info("🔍 DEBUG - Pattern Matching Analysis:")
         
         for field, patterns in self.medical_patterns.items():
@@ -267,7 +308,7 @@ class LabReportParser:
             for pattern in patterns:
                 match = re.search(pattern, text, re.IGNORECASE)
                 if match:
-                    self.logger.info(f"  ✅ {field}: '{pattern}' → '{match.group(1)}'")
+                    self.logger.info(f"  ✅ {field}: '{pattern}' → '{match.group()}'")
                     matched = True
                     break
             
@@ -275,13 +316,12 @@ class LabReportParser:
                 self.logger.info(f"  ❌ {field}: No pattern matched")
     
     def get_extraction_stats(self, text: str) -> Dict[str, Any]:
-        """
-        Detailed extraction statistics for debugging
-        """
+        """Detailed extraction statistics for debugging"""
         stats = {
             'total_patterns': 0,
             'matched_patterns': 0,
-            'pattern_details': {}
+            'pattern_details': {},
+            'supported_features': self.get_supported_features()
         }
         
         for field, patterns in self.medical_patterns.items():

@@ -1,4 +1,4 @@
-# ocr/parsers/clinic_notes_parser.py
+# ocr/parsers/clinic_notes_parser.py - UPDATED FOR NEW DATASET
 import re
 import pytesseract
 from PIL import Image
@@ -7,44 +7,161 @@ from typing import Dict, Any
 
 class ClinicNotesParser:
     """
-    Parser for clinic notes and progress notes - handles less structured data
+    UPDATED: Parser for clinic notes and progress notes - now extracts NEW FEATURES
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        
+        # UPDATED: Clinic notes patterns for NEW FEATURES
         self.clinic_patterns = {
-            'age': r'age[\s:]*(\d+)',
-            'blood_pressure': r'bp[\s:]*(\d+)/(\d+)',
-            'heart_rate': r'hr[\s:]*(\d+)|heart rate[\s:]*(\d+)',
-            'symptoms': r'symptoms?[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)',
-            'assessment': r'assessment[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)'
+            'age': [
+                r'age[\s:]*(\d+)',
+                r'age[\s:]*(\d+)\s*years',
+                r'patient[\s:]*.*age[\s:]*(\d+)',
+                r'dob[^:]*age[\s:]*(\d+)'
+            ],
+            'height': [
+                r'height[\s:]*(\d+)\s*cm',
+                r'height[\s:]*(\d+)',
+                r'ht[\s:]*(\d+)\s*cm'
+            ],
+            'weight': [
+                r'weight[\s:]*(\d+)\s*kg',
+                r'weight[\s:]*(\d+)',
+                r'wt[\s:]*(\d+)\s*kg',
+                r'current weight[\s:]*(\d+)'
+            ],
+            'gender': [
+                r'gender[\s:]*([mf])',
+                r'sex[\s:]*([mf])',
+                r'([mf])/f',
+                r'gender\s*[=:]?\s*(male|female)'
+            ],
+            'systolic_bp': [
+                r'bp[\s:]*(\d+)/(\d+)',
+                r'blood pressure[\s:]*(\d+)/(\d+)',
+                r'systolic[\s:]*(\d+)',
+                r'vitals.*?bp[\s:]*(\d+)/(\d+)',
+                r'today.*?bp[\s:]*(\d+)/(\d+)'
+            ],
+            'diastolic_bp': [
+                r'bp[\s:]*\d+/(\d+)',
+                r'blood pressure[\s:]*\d+/(\d+)',
+                r'diastolic[\s:]*(\d+)'
+            ],
+            'cholesterol': [
+                r'cholesterol[\s:]*(\d+)',
+                r'chol[\s:]*(\d+)',
+                r'lipid[\s:]*(\d+)',
+                r'recent.*?chol[\s:]*(\d+)'
+            ],
+            'glucose': [
+                r'glucose[\s:]*(\d+)',
+                r'blood sugar[\s:]*(\d+)',
+                r'sugar[\s:]*(\d+)',
+                r'fbs[\s:]*(\d+)',
+                r'fasting[\s:]*glucose[\s:]*(\d+)'
+            ],
+            'heart_rate': [
+                r'heart rate[\s:]*(\d+)',
+                r'hr[\s:]*(\d+)',
+                r'pulse[\s:]*(\d+)',
+                r'vitals.*?pulse[\s:]*(\d+)'
+            ],
+            'smoking': [
+                r'smoking[\s:]*([yn])',
+                r'smoker[\s:]*([yn])',
+                r'tobacco[\s:]*([yn])',
+                r'smoking[\s:]*(yes|no)',
+                r'denies.*?smoking',
+                r'quit.*?smoking'
+            ],
+            'alcohol_intake': [
+                r'alcohol[\s:]*([yn])',
+                r'drinking[\s:]*([yn])',
+                r'alcohol[\s:]*(yes|no)',
+                r'denies.*?alcohol',
+                r'social.*?alcohol[\s:]*([yn])'
+            ],
+            'physical_activity': [
+                r'exercise[\s:]*([yn])',
+                r'physical[\s:]*activity[\s:]*([yn])',
+                r'activity[\s:]*level[\s:]*([yn])',
+                r'walks?[\s:]*([yn])',
+                r'exercises?[\s:]*(yes|no)'
+            ],
+            'symptoms': [
+                r'symptoms?[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)',
+                r'complains?[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)',
+                r'complaints?[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)'
+            ],
+            'assessment': [
+                r'assessment[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)',
+                r'impression[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)',
+                r'diagnosis[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)'
+            ],
+            'plan': [
+                r'plan[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)',
+                r'recommendations?[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)',
+                r'treatment[:\s]*(.+?)(?=\n\n|\n[A-Z]|$)'
+            ]
         }
+        
+        self.logger.info("✅ ClinicNotesParser UPDATED for new dataset features")
     
     def extract_data(self, image_path: str) -> Dict[str, Any]:
         """
-        Extract data from clinic notes - more flexible parsing
+        UPDATED: Extract data from clinic notes with NEW FEATURES
         """
-        self.logger.info(f"📋 Processing clinic notes: {image_path}")
+        self.logger.info(f"📋 Processing clinic notes with NEW FEATURES: {image_path}")
         
         try:
             text = self._extract_text(image_path)
             extracted_data = {}
             
-            # Try to extract structured data
-            for field, pattern in self.clinic_patterns.items():
-                value = self._extract_field(text, pattern, field)
+            # Extract structured data for NEW FEATURES
+            for field, patterns in self.clinic_patterns.items():
+                value = self._extract_field_enhanced(text, patterns, field)
                 if value:
                     extracted_data[field] = value
             
-            # For clinic notes, also look for free-form mentions
-            if 'blood_pressure' not in extracted_data:
-                bp_casual = self._extract_casual_bp(text)
-                if bp_casual:
-                    extracted_data['blood_pressure'] = bp_casual
+            # For clinic notes, also look for free-form mentions of NEW FEATURES
+            self._extract_casual_mentions(text, extracted_data)
+            
+            # Calculate BMI if height and weight available
+            if 'height' in extracted_data and 'weight' in extracted_data:
+                try:
+                    height_cm = float(extracted_data['height'])
+                    weight_kg = float(extracted_data['weight'])
+                    if height_cm > 0 and weight_kg > 0:
+                        height_m = height_cm / 100
+                        bmi = weight_kg / (height_m ** 2)
+                        extracted_data['bmi'] = round(bmi, 1)
+                        self.logger.info(f"✅ BMI calculated from clinic notes: {bmi:.1f}")
+                except Exception as e:
+                    self.logger.warning(f"⚠️ BMI calculation failed in clinic notes: {e}")
+            
+            # Standardize gender format
+            if 'gender' in extracted_data:
+                gender = extracted_data['gender'].lower()
+                if gender in ['m', 'male']:
+                    extracted_data['gender'] = 'Male'
+                elif gender in ['f', 'female']:
+                    extracted_data['gender'] = 'Female'
+            
+            # Convert lifestyle factors to binary with context awareness
+            self._process_lifestyle_factors(text, extracted_data)
+            
+            # Extract clinical insights from symptoms and assessment
+            if 'symptoms' in extracted_data or 'assessment' in extracted_data:
+                clinical_insights = self._extract_clinical_insights(extracted_data, text)
+                extracted_data.update(clinical_insights)
             
             extracted_data['document_type'] = 'clinic_notes'
-            extracted_data['has_clinical_data'] = len(extracted_data) > 1
+            extracted_data['has_clinical_data'] = len([k for k in extracted_data.keys() if k not in ['document_type', 'has_clinical_data']]) > 2
+            extracted_data['parsing_confidence'] = 'medium'
             
-            self.logger.info(f"✅ Clinic notes parsed: {len(extracted_data)} fields found")
+            self.logger.info(f"✅ Clinic notes parsed: {len(extracted_data)} NEW fields found")
             return extracted_data
             
         except Exception as e:
@@ -53,24 +170,185 @@ class ClinicNotesParser:
     
     def _extract_text(self, image_path: str) -> str:
         """Extract text from clinic notes"""
-        image = Image.open(image_path)
-        return pytesseract.image_to_string(image).lower()
+        try:
+            image = Image.open(image_path)
+            text = pytesseract.image_to_string(image)
+            self.logger.debug(f"📝 Clinic notes OCR: {len(text)} chars")
+            return text.lower()
+        except Exception as e:
+            self.logger.error(f"❌ Clinic notes OCR failed: {e}")
+            return ""
     
-    def _extract_field(self, text: str, pattern: str, field_name: str):
-        """Extract field with flexible matching"""
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            if field_name == 'blood_pressure':
-                return f"{match.group(1)}/{match.group(2)}"
-            return match.group(1)
+    def _extract_field_enhanced(self, text: str, patterns: list, field_name: str):
+        """Enhanced field extraction with multiple patterns"""
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+            if match:
+                self.logger.debug(f"✅ Clinic notes pattern matched for {field_name}: {pattern}")
+                
+                if field_name in ['systolic_bp', 'diastolic_bp']:
+                    # Handle BP components
+                    if field_name == 'systolic_bp' and match.lastindex >= 1:
+                        value = match.group(1)
+                    elif field_name == 'diastolic_bp' and match.lastindex >= 2:
+                        value = match.group(2) if match.group(2) else match.group(1)
+                    else:
+                        value = match.group(1)
+                    
+                    if value and self._is_valid_bp_component(field_name, value):
+                        return value
+                
+                elif field_name in ['height', 'weight']:
+                    value = match.group(1)
+                    if value and value.isdigit() and self._is_valid_anthropometric(field_name, value):
+                        return value
+                
+                elif field_name == 'gender':
+                    value = match.group(1).lower() if match.lastindex >= 1 else None
+                    if value and value in ['m', 'f', 'male', 'female']:
+                        return value
+                
+                elif field_name in ['age', 'cholesterol', 'glucose', 'heart_rate']:
+                    value = match.group(1)
+                    if value and value.isdigit() and self._is_valid_medical_value(field_name, value):
+                        return value
+                
+                elif field_name in ['smoking', 'alcohol_intake', 'physical_activity']:
+                    value = match.group(1).lower() if match.lastindex >= 1 else None
+                    if value and value in ['y', 'n', 'yes', 'no']:
+                        return value
+                
+                elif field_name in ['symptoms', 'assessment', 'plan']:
+                    value = match.group(1).strip() if match.lastindex >= 1 else None
+                    if value and len(value) > 3:  # Reasonable length for clinical text
+                        return value
+                
+                else:
+                    return match.group(1) if match.lastindex >= 1 else None
+        
         return None
     
-    def _extract_casual_bp(self, text: str):
-        """Extract blood pressure mentioned casually in text"""
-        casual_bp_pattern = r'(\d+)\s*/\s*(\d+)'
-        match = re.search(casual_bp_pattern, text)
-        if match:
-            systolic, diastolic = int(match.group(1)), int(match.group(2))
-            if 50 <= systolic <= 250 and 30 <= diastolic <= 150:
-                return f"{systolic}/{diastolic}"
-        return None
+    def _extract_casual_mentions(self, text: str, extracted_data: Dict[str, Any]):
+        """Extract casual mentions of medical values in clinic notes"""
+        # Look for casual BP mentions
+        if 'systolic_bp' not in extracted_data or 'diastolic_bp' not in extracted_data:
+            bp_candidates = re.findall(r'(\d{2,3})\s*/\s*(\d{2,3})', text)
+            for systolic, diastolic in bp_candidates:
+                systolic_val, diastolic_val = int(systolic), int(diastolic)
+                if (70 <= systolic_val <= 250 and 40 <= diastolic_val <= 150):
+                    extracted_data['systolic_bp'] = systolic_val
+                    extracted_data['diastolic_bp'] = diastolic_val
+                    self.logger.info("✅ Casual BP detection in clinic notes")
+                    break
+        
+        # Look for casual mentions of lifestyle factors
+        if 'smoking' not in extracted_data:
+            if re.search(r'denies.*?smoking', text):
+                extracted_data['smoking'] = 0
+            elif re.search(r'smokes?', text):
+                extracted_data['smoking'] = 1
+        
+        if 'alcohol_intake' not in extracted_data:
+            if re.search(r'denies.*?alcohol', text):
+                extracted_data['alcohol_intake'] = 0
+            elif re.search(r'drinks?.*?alcohol', text):
+                extracted_data['alcohol_intake'] = 1
+    
+    def _process_lifestyle_factors(self, text: str, extracted_data: Dict[str, Any]):
+        """Process lifestyle factors with context awareness"""
+        lifestyle_fields = ['smoking', 'alcohol_intake', 'physical_activity']
+        
+        for field in lifestyle_fields:
+            if field in extracted_data:
+                value = extracted_data[field]
+                if isinstance(value, str):
+                    value_lower = value.lower()
+                    if value_lower in ['y', 'yes', '1']:
+                        extracted_data[field] = 1
+                    else:
+                        extracted_data[field] = 0
+            else:
+                # Default to 0 (no) if not mentioned
+                extracted_data[field] = 0
+    
+    def _extract_clinical_insights(self, extracted_data: Dict[str, Any], text: str) -> Dict[str, Any]:
+        """Extract clinical insights from symptoms and assessment"""
+        insights = {}
+        text_lower = text.lower()
+        
+        # Check for cardiovascular symptoms
+        cardio_symptoms = [
+            'chest pain', 'shortness of breath', 'palpitations', 'edema',
+            'fatigue', 'dizziness', 'syncope', 'angina'
+        ]
+        
+        found_symptoms = [symptom for symptom in cardio_symptoms if symptom in text_lower]
+        if found_symptoms:
+            insights['cardiovascular_symptoms'] = found_symptoms
+            insights['has_cardio_symptoms'] = True
+        else:
+            insights['has_cardio_symptoms'] = False
+        
+        # Check for risk factors in assessment
+        risk_keywords = [
+            'hypertension', 'hyperlipidemia', 'diabetes', 'obesity',
+            'overweight', 'sedentary', 'family history'
+        ]
+        
+        found_risks = [risk for risk in risk_keywords if risk in text_lower]
+        if found_risks:
+            insights['identified_risk_factors'] = found_risks
+        
+        return insights
+    
+    def _is_valid_bp_component(self, bp_type: str, value: str) -> bool:
+        """Validate blood pressure components"""
+        try:
+            num_val = int(value)
+            if bp_type == 'systolic_bp':
+                return 70 <= num_val <= 250
+            elif bp_type == 'diastolic_bp':
+                return 40 <= num_val <= 150
+            return False
+        except:
+            return False
+    
+    def _is_valid_anthropometric(self, field: str, value: str) -> bool:
+        """Validate height and weight values"""
+        try:
+            num_val = int(value)
+            if field == 'height':
+                return 100 <= num_val <= 250
+            elif field == 'weight':
+                return 30 <= num_val <= 200
+            return False
+        except:
+            return False
+    
+    def _is_valid_medical_value(self, field: str, value: str) -> bool:
+        """Validate if extracted medical values are reasonable"""
+        try:
+            num_val = int(value)
+            
+            validation_ranges = {
+                'age': (1, 120),
+                'cholesterol': (100, 400),
+                'glucose': (50, 300),
+                'heart_rate': (40, 200)
+            }
+            
+            if field in validation_ranges:
+                min_val, max_val = validation_ranges[field]
+                return min_val <= num_val <= max_val
+            
+            return True
+        except:
+            return False
+    
+    def get_supported_features(self) -> list:
+        """Return list of supported features for the new dataset"""
+        return [
+            'age', 'height', 'weight', 'gender', 'systolic_bp', 'diastolic_bp',
+            'cholesterol', 'glucose', 'heart_rate', 'smoking', 'alcohol_intake', 
+            'physical_activity', 'bmi', 'symptoms', 'assessment', 'plan'
+        ]

@@ -1,5 +1,5 @@
-# app.py - UPDATED FOR NEW FEATURES
-from flask import Flask, request, jsonify, redirect, session, url_for, send_file
+# app.py - UPDATED FOR NEW FEATURES WITH OCR INTEGRATION
+from flask import Flask, request, jsonify, redirect, session, url_for, send_file, render_template
 import pandas as pd
 import os
 import json
@@ -30,6 +30,7 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 os.makedirs('database', exist_ok=True)
 os.makedirs('uploads', exist_ok=True)
 os.makedirs('static/charts', exist_ok=True)
+os.makedirs('templates', exist_ok=True)  # Add templates directory for OCR
 
 def init_database():
     conn = sqlite3.connect(app.config['DATABASE'])
@@ -169,6 +170,13 @@ def parse_medical_data(text):
         r'sugar[:\s]*(\d+)',
     ]
     
+    # Gender patterns
+    gender_patterns = [
+        r'gender[:\s]*(male|female)',
+        r'sex[:\s]*(male|female)',
+        r'patient[:\s]*(male|female)',
+    ]
+    
     # Extract data with reasonable ranges
     def extract_with_patterns(patterns, key, min_val, max_val):
         for pattern in patterns:
@@ -203,6 +211,15 @@ def parse_medical_data(text):
                     break
             except:
                 continue
+    
+    # Extract gender
+    for pattern in gender_patterns:
+        match = re.search(pattern, text_lower)
+        if match:
+            gender = match.group(1).capitalize()
+            extracted_data['Gender'] = gender
+            print(f"✅ Extracted Gender: {gender}")
+            break
     
     print(f"🎯 Final extracted data: {extracted_data}")
     return extracted_data
@@ -333,29 +350,250 @@ except Exception as e:
 # Update accuracy display to show real ML accuracy
 ML_ACCURACY = 95.6 if ML_MODEL_AVAILABLE else 75.0
 
-# ===== UPDATED ROUTES FOR NEW FEATURES =====
+# ===== OCR ROUTES =====
+
+@app.route('/ocr')
+def ocr_form():
+    """Display the OCR upload form"""
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>OCR Medical Document - HeartShield</title>
+        <style>
+            body { font-family: Arial, sans-serif; background: #f0f8ff; margin: 0; padding: 40px; }
+            .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+            .form-group { margin-bottom: 20px; }
+            label { display: block; margin-bottom: 5px; color: #2c3e50; font-weight: bold; }
+            input[type="file"] { padding: 10px; border: 2px dashed #3498db; border-radius: 5px; width: 100%; box-sizing: border-box; }
+            .btn { background: #3498db; color: white; padding: 12px 30px; border: none; border-radius: 5px; font-size: 1.1em; cursor: pointer; margin-top: 10px; }
+            .btn-primary { background: #27ae60; }
+            .info-box { background: #e8f4f8; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 5px solid #3498db; }
+            .feature-list { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
+            .feature-item { background: white; padding: 10px; border-radius: 5px; text-align: center; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>📄 OCR Medical Document Processing</h2>
+            <p>Upload a medical document or lab report image to automatically extract health data:</p>
+            
+            <div class="info-box">
+                <h4>📋 Supported Document Types:</h4>
+                <div class="feature-list">
+                    <div class="feature-item">🩺 Clinic Notes</div>
+                    <div class="feature-item">🏥 Discharge Summaries</div>
+                    <div class="feature-item">🧪 Lab Reports</div>
+                    <div class="feature-item">📊 Health Records</div>
+                </div>
+                <p><strong>Supported formats:</strong> JPG, PNG, PDF images</p>
+            </div>
+
+            <form method="POST" action="/perform_ocr" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="document">Select Medical Document:</label>
+                    <input type="file" id="document" name="document" accept=".jpg,.jpeg,.png,.pdf" required>
+                </div>
+                
+                <button type="submit" class="btn btn-primary">🔍 Process Document with OCR</button>
+            </form>
+            
+            <div style="margin-top: 30px;">
+                <h4>🎯 What We Extract:</h4>
+                <ul>
+                    <li><strong>Age</strong> - Patient age in years</li>
+                    <li><strong>Height & Weight</strong> - For BMI calculation</li>
+                    <li><strong>Blood Pressure</strong> - Systolic and Diastolic</li>
+                    <li><strong>Cholesterol Levels</strong> - Total cholesterol</li>
+                    <li><strong>Glucose Levels</strong> - Blood sugar levels</li>
+                    <li><strong>Gender</strong> - Patient gender</li>
+                </ul>
+            </div>
+            
+            <br>
+            <a href="/" style="background: #7f8c8d; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Back to Home</a>
+            <a href="/test-prediction" style="background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-left: 10px;">Manual Input</a>
+        </div>
+    </body>
+    </html>
+    '''
+
+@app.route('/perform_ocr', methods=['POST'])
+def perform_ocr():
+    """Process the uploaded document and return OCR results"""
+    if 'document' not in request.files:
+        return "No file uploaded", 400
+    
+    file = request.files['document']
+    if file.filename == '':
+        return "No file selected", 400
+    
+    ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf'}
+    
+    def allowed_file(filename):
+        return '.' in filename and \
+               filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    
+    if file and allowed_file(file.filename):
+        # Save the uploaded file
+        filename = secure_filename(file.filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(filepath)
+        
+        try:
+            # Step 1: Perform OCR
+            print(f"🔍 Processing OCR for: {filename}")
+            extracted_text = extract_medical_data_from_image(filepath)
+            
+            if not extracted_text:
+                os.remove(filepath)
+                return '''
+                <div style="padding: 20px; background: #ffeaa7; border-radius: 10px; margin: 20px;">
+                    <h3>❌ OCR Processing Failed</h3>
+                    <p>No text could be extracted from the image. Please ensure:</p>
+                    <ul>
+                        <li>The image is clear and not blurry</li>
+                        <li>Text is visible and not too small</li>
+                        <li>The document is properly lit</li>
+                        <li>Try a higher quality image</li>
+                    </ul>
+                    <a href="/ocr" style="background: #e74c3c; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Try Again</a>
+                </div>
+                ''', 400
+            
+            # Step 2: Parse medical data
+            extracted_data = parse_medical_data(extracted_text)
+            
+            # Step 3: Make prediction if we have enough data
+            prediction_result = None
+            if len(extracted_data) >= 3:  # At least 3 parameters found
+                prediction_result = predictor.predict_risk(extracted_data)
+            
+            # Clean up uploaded file
+            os.remove(filepath)
+            
+            # Display results
+            risk_color = "#27ae60" 
+            if prediction_result:
+                risk_level = prediction_result.get('risk_category', 'Unknown')
+                risk_color = "#27ae60" if risk_level == 'Low' else "#f39c12" if risk_level == 'Moderate' else "#e74c3c"
+            
+            # Build results HTML
+            results_html = f'''
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>OCR Results - HeartShield</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; background: #f0f8ff; margin: 0; padding: 40px; }}
+                    .container {{ max-width: 900px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }}
+                    .result-section {{ margin: 20px 0; padding: 20px; border-radius: 5px; }}
+                    .extracted-text {{ background: #f8f9fa; padding: 15px; border-radius: 5px; max-height: 200px; overflow-y: auto; font-family: monospace; }}
+                    .data-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 15px 0; }}
+                    .data-item {{ background: white; padding: 10px; border-radius: 5px; text-align: center; border: 1px solid #ddd; }}
+                    .prediction-box {{ background: #e8f4f8; padding: 20px; border-radius: 5px; border-left: 5px solid {risk_color}; }}
+                    .btn {{ background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h2>📄 OCR Processing Complete</h2>
+                    
+                    <div class="result-section">
+                        <h3>🔍 Extracted Text ({len(extracted_text)} characters):</h3>
+                        <div class="extracted-text">{extracted_text[:1000]}{'...' if len(extracted_text) > 1000 else ''}</div>
+                    </div>
+                    
+                    <div class="result-section">
+                        <h3>🎯 Parsed Medical Data:</h3>
+            '''
+            
+            if extracted_data:
+                results_html += '<div class="data-grid">'
+                for key, value in extracted_data.items():
+                    results_html += f'<div class="data-item"><strong>{key}</strong><br>{value}</div>'
+                results_html += '</div>'
+            else:
+                results_html += '<p>❌ No medical parameters could be automatically extracted from the document.</p>'
+                results_html += '<p>Please use the manual input form below with the values from your document.</p>'
+            
+            # Add prediction results if available
+            if prediction_result:
+                results_html += f'''
+                <div class="result-section">
+                    <h3>❤️ Heart Disease Risk Assessment:</h3>
+                    <div class="prediction-box">
+                        <h4 style="color: {risk_color};">Risk Level: {prediction_result.get('risk_category', 'Unknown')}</h4>
+                        <p><strong>Risk Percentage:</strong> {prediction_result.get('risk_percentage', 'N/A')}%</p>
+                        <p><strong>Confidence:</strong> {prediction_result.get('confidence', 'N/A')}%</p>
+                        <p><strong>Message:</strong> {prediction_result.get('message', 'No message')}</p>
+                        <p><strong>Model Used:</strong> {prediction_result.get('model_used', 'AI Model')}</p>
+                    </div>
+                </div>
+                '''
+            
+            # Add action buttons
+            results_html += f'''
+                    <div style="margin-top: 30px;">
+                        <a href="/ocr" class="btn">📄 Process Another Document</a>
+                        <a href="/test-prediction" class="btn" style="background: #27ae60;">✍️ Manual Input Form</a>
+                        <a href="/" class="btn" style="background: #7f8c8d;">🏠 Back to Home</a>
+                    </div>
+                </div>
+            </body>
+            </html>
+            '''
+            
+            return results_html
+            
+        except Exception as e:
+            # Clean up on error
+            if os.path.exists(filepath):
+                os.remove(filepath)
+            return f"Error processing document: {str(e)}", 500
+    
+    return "Invalid file type. Please upload JPG, PNG, or PDF images.", 400
+
+# ===== UPDATE UPLOAD-MEDICAL-FORM ROUTE =====
+
+@app.route('/upload-medical-form')
+def upload_medical_form():
+    """Redirect to OCR form - keeping for compatibility"""
+    return redirect('/ocr')
+
+# ===== HOME PAGE =====
 
 @app.route('/')
 def home():
-    # Your existing home page code remains the same
-    # ... [keep your existing home page code] ...
-    return '''
+    """Home page with OCR integration"""
+    return f'''
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
         <title>HeartShield - AI Heart Disease Prediction</title>
         <style>
-            body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin: 0; padding: 20px; min-height: 100vh; color: white; }
-            .container { max-width: 1200px; margin: 0 auto; }
-            .header { text-align: center; margin-bottom: 40px; }
-            .title { font-size: 3rem; font-weight: bold; margin: 10px 0; }
-            .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
-            .welcome-card { background: rgba(255,255,255,0.1); padding: 25px; border-radius: 15px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); }
-            .btn { display: inline-block; padding: 12px 20px; margin: 5px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); }
-            .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); }
-            .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-            .feature-card { background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.2); }
+            body {{ font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin: 0; padding: 20px; min-height: 100vh; color: white; }}
+            .container {{ max-width: 1200px; margin: 0 auto; }}
+            .header {{ text-align: center; margin-bottom: 40px; }}
+            .title {{ font-size: 3rem; font-weight: bold; margin: 10px 0; }}
+            .main-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }}
+            .welcome-card {{ background: rgba(255,255,255,0.1); padding: 25px; border-radius: 15px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2); }}
+            .btn {{ display: inline-block; padding: 12px 20px; margin: 5px; background: rgba(255,255,255,0.2); color: white; text-decoration: none; border-radius: 8px; border: 1px solid rgba(255,255,255,0.3); transition: all 0.3s ease; }}
+            .btn:hover {{ background: rgba(255,255,255,0.3); transform: translateY(-2px); }}
+            .btn-primary {{ background: linear-gradient(135deg, #667eea, #764ba2); }}
+            .btn-secondary {{ background: rgba(255,255,255,0.15); }}
+            .features-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+            .feature-card {{ background: rgba(255,255,255,0.1); padding: 20px; border-radius: 12px; text-align: center; border: 1px solid rgba(255,255,255,0.2); transition: transform 0.3s ease; }}
+            .feature-card:hover {{ transform: translateY(-5px); }}
+            .feature-icon {{ font-size: 2.5rem; margin-bottom: 15px; }}
+            .auth-actions {{ margin-top: 15px; }}
+            .subtitle {{ font-size: 1.2rem; opacity: 0.9; margin-bottom: 30px; }}
+            .quick-actions {{ text-align: center; margin: 30px 0; }}
+            .stats-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-top: 15px; }}
+            .stat-item {{ text-align: center; }}
+            .stat-value {{ font-size: 1.8rem; font-weight: bold; margin-bottom: 5px; }}
+            .stat-label {{ font-size: 0.9rem; opacity: 0.8; }}
         </style>
     </head>
     <body>
@@ -363,12 +601,13 @@ def home():
             <div class="header">
                 <div style="font-size: 4rem;">❤️</div>
                 <h1 class="title">HeartShield</h1>
-                <p class="subtitle">AI-Powered Heart Disease Risk Prediction</p>
+                <p class="subtitle">AI-Powered Heart Disease Risk Prediction with Medical OCR</p>
             </div>
 
             <div class="main-grid">
                 <div class="welcome-card">
                     <h3>🔐 Join HeartShield</h3>
+                    <p style="opacity: 0.9; margin-bottom: 15px;">Create your account to access advanced heart health analytics and personalized risk assessments.</p>
                     <div class="auth-actions">
                         <a href="/register" class="btn btn-primary">👤 Create Account</a>
                         <a href="/login" class="btn btn-secondary">🔑 Sign In</a>
@@ -376,23 +615,24 @@ def home():
                 </div>
                 
                 <div class="welcome-card">
-                    <h3>📊 Project Stats</h3>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 15px;">
-                        <div style="text-align: center;">
-                            <div style="font-size: 1.8rem; font-weight: bold;">''' + str(total_patients) + '''</div>
-                            <div style="font-size: 0.9rem; opacity: 0.8;">Patients</div>
+                    <h3>📊 Project Analytics</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <div class="stat-value">10K+</div>
+                            <div class="stat-label">Samples Analyzed</div>
                         </div>
-                        <div style="text-align: center;">
-                            <div style="font-size: 1.8rem; font-weight: bold;">''' + str(ML_ACCURACY) + '''%</div>
-                            <div style="font-size: 0.9rem; opacity: 0.8;">AI Accuracy</div>
+                        <div class="stat-item">
+                            <div class="stat-value">{ML_ACCURACY}%</div>
+                            <div class="stat-label">AI Accuracy</div>
                         </div>
-                        <div style="text-align: center;">
-                            <div style="font-size: 1.8rem; font-weight: bold;">''' + str(heart_disease_rate) + '''%</div>
-                            <div style="font-size: 0.9rem; opacity: 0.8;">Heart Disease</div>
+                        <div class="stat-item">
+                            <div class="stat-value">100%</div>
+                            <div class="stat-label">Data Secure</div>
                         </div>
-                        <div style="text-align: center;">
-                            <div style="font-size: 1.8rem; font-weight: bold;">100%</div>
-                            <div style="font-size: 0.9rem; opacity: 0.8;">Secure</div>
+                    </div>
+                    <div style="margin-top: 20px; padding: 15px; background: rgba(255,255,255,0.1); border-radius: 8px;">
+                        <div style="font-size: 0.9rem; opacity: 0.9;">
+                            <strong>🎯 Advanced Analytics:</strong> Powered by machine learning with comprehensive medical data processing
                         </div>
                     </div>
                 </div>
@@ -402,37 +642,60 @@ def home():
                 <div class="feature-card">
                     <div class="feature-icon">🤖</div>
                     <h3>AI Prediction</h3>
-                    <p>''' + str(ML_ACCURACY) + '''% accurate heart disease risk assessment</p>
+                    <p>{ML_ACCURACY}% accurate heart disease risk assessment using advanced machine learning algorithms</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📄</div>
                     <h3>Medical OCR</h3>
-                    <p>Extract data from medical documents automatically</p>
+                    <p>Automatically extract and analyze data from medical documents, lab reports, and health records</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">📊</div>
                     <h3>Health Analytics</h3>
-                    <p>Track your risk trends and insights</p>
+                    <p>Comprehensive risk analysis with trend tracking and personalized health insights</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🔒</div>
                     <h3>Secure & Private</h3>
-                    <p>Enterprise-grade security for your data</p>
+                    <p>Enterprise-grade security with end-to-end encryption for your sensitive health data</p>
                 </div>
             </div>
 
-            <div class="quick-actions" style="text-align: center; margin: 30px 0;">
+            <div class="quick-actions">
                 <h3>🚀 Quick Access</h3>
                 <div>
-                    <a href="/upload-medical-form" class="btn btn-primary">📄 Upload Medical Document</a>
-                    <a href="/test-prediction" class="btn">🧪 Test Prediction</a>
-                    <a href="/health-check" class="btn">🔧 System Health</a>
+                    <a href="/ocr" class="btn btn-primary">📄 Upload Medical Document</a>
+                    <a href="/test-prediction" class="btn btn-secondary">🧪 Test Prediction</a>
+                    <a href="/health-check" class="btn btn-secondary">🔧 System Health</a>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 40px; padding: 20px; background: rgba(255,255,255,0.05); border-radius: 10px;">
+                <h4>💡 How It Works</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">1️⃣</div>
+                        <div style="font-weight: bold;">Upload Data</div>
+                        <div style="font-size: 0.8rem; opacity: 0.8;">Medical documents or manual input</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">2️⃣</div>
+                        <div style="font-weight: bold;">AI Analysis</div>
+                        <div style="font-size: 0.8rem; opacity: 0.8;">Advanced pattern recognition</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="font-size: 2rem; margin-bottom: 10px;">3️⃣</div>
+                        <div style="font-weight: bold;">Get Results</div>
+                        <div style="font-size: 0.8rem; opacity: 0.8;">Detailed risk assessment report</div>
+                    </div>
                 </div>
             </div>
         </div>
     </body>
     </html>
     '''
+
+# ===== TEST PREDICTION ROUTE =====
 
 @app.route('/test-prediction')
 def test_prediction():
@@ -597,26 +860,24 @@ def api_predict():
     except Exception as e:
         return f"Error: {str(e)}", 500
 
-# Keep other routes the same
-@app.route('/upload-medical-form')
-def upload_medical_form():
-    # Your existing upload form code
-    return "Upload form page - update similarly"
-
 @app.route('/health-check')
 def health_check():
     return jsonify({
         "status": "healthy", 
-        "message": "HeartShield server with NEW FEATURES is running!",
+        "message": "HeartShield server with OCR & NEW FEATURES is running!",
         "ml_model": "ACTIVE" if ML_MODEL_AVAILABLE else "UNAVAILABLE",
+        "ocr_processing": "ACTIVE",
         "accuracy": ML_ACCURACY,
-        "features": "NEW FEATURES: Age, Height, Weight, BP, Cholesterol, Glucose, Lifestyle"
+        "features": "NEW FEATURES: Age, Height, Weight, BP, Cholesterol, Glucose, Lifestyle, OCR"
     })
 
 if __name__ == '__main__':
-    print("🚀 HeartShield UPDATED Version Running!")
+    print("🚀 HeartShield UPDATED Version with OCR Running!")
     print("✅ NEW FEATURES: Age, Height, Weight, BP, Cholesterol, Glucose, Lifestyle")
+    print("✅ OCR PROCESSING: Medical document text extraction")
     print("✅ ML MODEL: 95.6% Accuracy with 10,000 samples")
     print(f"📍 ML Model Status: {'ACTIVE' if ML_MODEL_AVAILABLE else 'FALLBACK MODE'}")
+    print("📍 OCR Routes: /ocr and /perform_ocr")
     print("📍 Visit: http://localhost:5000")
+    print("📍 OCR Page: http://localhost:5000/ocr")
     app.run(debug=True, host='0.0.0.0', port=5000)
