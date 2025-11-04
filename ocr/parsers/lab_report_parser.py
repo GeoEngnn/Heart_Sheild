@@ -1,16 +1,20 @@
-# ocr/parsers/lab_report_parser.py - UPDATED FOR NEW DATASET
+# ocr/parsers/lab_report_parser.py - UPDATED WITH OCR.SPACE API
 import re
-import pytesseract
-from PIL import Image
 import logging
 from typing import Dict, Any
 
+# Import the OCR.space reader from universal_reader
+from ..universal_reader import OCRSpaceReader
+
 class LabReportParser:
     """
-    UPDATED parser for laboratory reports - NOW WITH NEW DATASET FEATURES
+    UPDATED parser for laboratory reports - NOW WITH OCR.SPACE API
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        
+        # NEW: Use OCR.space API for text extraction
+        self.ocr_reader = OCRSpaceReader()
         
         # UPDATED MEDICAL PATTERNS FOR NEW FEATURES
         self.medical_patterns = {
@@ -115,18 +119,23 @@ class LabReportParser:
             ]
         }
         
-        self.logger.info("🎯 UPDATED LabReportParser initialized for NEW DATASET FEATURES!")
+        self.logger.info("🎯 UPDATED LabReportParser initialized with OCR.space API!")
     
     def extract_data(self, image_path: str) -> Dict[str, Any]:
         """
-        Extract medical data from lab report images - UPDATED FOR NEW FEATURES
+        Extract medical data from lab report images - NOW WITH OCR.SPACE API
         """
-        self.logger.info(f"🔬 Processing lab report: {image_path}")
+        self.logger.info(f"🔬 Processing lab report with OCR.space: {image_path}")
         
         try:
-            # Extract text using OCR
-            text = self._extract_text(image_path)
-            self.logger.info(f"📝 Raw text extracted: {len(text)} characters")
+            # NEW: Extract text using OCR.space API
+            text = self._extract_text_enhanced(image_path)
+            
+            if not text or len(text.strip()) < 10:
+                self.logger.warning("⚠️ Insufficient text extracted by OCR.space")
+                return {"error": "Insufficient text extracted from document"}
+                
+            self.logger.info(f"📝 OCR.space extracted: {len(text)} characters")
             
             # Parse medical data using updated pattern matching
             extracted_data = {}
@@ -167,16 +176,53 @@ class LabReportParser:
             self.logger.error(f"❌ Error parsing lab report: {e}")
             return {"error": str(e)}
     
-    def _extract_text(self, image_path: str) -> str:
-        """Extract text from image using OCR"""
+    def _extract_text_enhanced(self, image_path: str) -> str:
+        """
+        NEW: Extract text using OCR.space API with enhanced cleaning
+        """
         try:
-            image = Image.open(image_path)
-            text = pytesseract.image_to_string(image)
-            self.logger.debug(f"Raw OCR text: {text}")
-            return text.lower()
+            # Use OCR.space API for superior text extraction
+            raw_text = self.ocr_reader.extract_text(image_path)
+            
+            if not raw_text:
+                self.logger.warning("❌ No text extracted by OCR.space")
+                return ""
+            
+            # Enhanced text cleaning for medical documents
+            cleaned_text = self._clean_medical_text(raw_text)
+            self.logger.debug(f"🧹 Cleaned text sample: {cleaned_text[:200]}...")
+            
+            return cleaned_text.lower()
+            
         except Exception as e:
-            self.logger.error(f"❌ OCR extraction failed: {e}")
+            self.logger.error(f"❌ OCR.space extraction failed: {e}")
             return ""
+    
+    def _clean_medical_text(self, text: str) -> str:
+        """
+        NEW: Enhanced cleaning for medical OCR text
+        """
+        # Common OCR corrections for medical terms
+        medical_corrections = {
+            'ro5': 'tsh', 'Go1': 'glucose', 'prise': 'profile',
+            'coc': 'cbc', 'trh': 'tsh', 'fo': 'fbs',
+            'dias': 'diastolic', 'sys': 'systolic',
+            'chol': 'cholesterol', 'fbs': 'fasting blood sugar',
+            'hr': 'heart rate', 'wt': 'weight', 'ht': 'height',
+            'bp': 'blood pressure', 'hgt': 'height', 'wgt': 'weight',
+            'yrs': 'years', 'yr': 'year', 'kg': 'kg', 'cm': 'cm'
+        }
+        
+        cleaned_text = text.lower()
+        
+        # Apply medical term corrections
+        for wrong, correct in medical_corrections.items():
+            cleaned_text = cleaned_text.replace(wrong.lower(), correct)
+        
+        # Remove extra whitespace but preserve structure
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+        
+        return cleaned_text
     
     def _extract_field_enhanced(self, text: str, patterns: list, field_name: str):
         """
@@ -338,4 +384,39 @@ class LabReportParser:
                 if match:
                     stats['matched_patterns'] += 1
         
-        return stats
+        return stats  # Fixed: removed extra slash
+
+    def test_ocr_space(self, image_path: str) -> Dict[str, Any]:
+        """
+        NEW: Test method to verify OCR.space integration
+        """
+        self.logger.info(f"🧪 Testing OCR.space with: {image_path}")
+        
+        try:
+            # Extract raw text using OCR.space
+            raw_text = self.ocr_reader.extract_text(image_path)
+            
+            # Clean the text
+            cleaned_text = self._clean_medical_text(raw_text)
+            
+            # Get extraction stats
+            stats = self.get_extraction_stats(cleaned_text)
+            
+            # Try to extract data
+            extracted_data = self.extract_data(image_path)
+            
+            return {
+                "status": "success",
+                "raw_text_length": len(raw_text),
+                "cleaned_text_length": len(cleaned_text),
+                "extraction_stats": stats,
+                "extracted_fields": list(extracted_data.keys()) if isinstance(extracted_data, dict) else [],
+                "text_preview": cleaned_text[:500] + "..." if len(cleaned_text) > 500 else cleaned_text
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ OCR.space test failed: {e}")
+            return {
+                "status": "error",
+                "message": str(e)
+            }

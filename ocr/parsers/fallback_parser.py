@@ -1,16 +1,20 @@
-# ocr/parsers/fallback_parser.py - UPDATED FOR NEW DATASET
+# ocr/parsers/fallback_parser.py - UPDATED WITH OCR.SPACE API
 import re
-import pytesseract
-from PIL import Image
 import logging
 from typing import Dict, Any
 
+# Import the OCR.space reader from universal_reader
+from ..universal_reader import OCRSpaceReader
+
 class GeneralMedicalParser:
     """
-    UPDATED: Fallback parser for any medical document - now extracts NEW FEATURES
+    UPDATED: Fallback parser for any medical document - NOW WITH OCR.SPACE API
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        
+        # NEW: Use OCR.space API for text extraction
+        self.ocr_reader = OCRSpaceReader()
         
         # UPDATED: General patterns for NEW FEATURES
         self.general_patterns = {
@@ -76,16 +80,28 @@ class GeneralMedicalParser:
             ]
         }
         
-        self.logger.info("✅ GeneralMedicalParser UPDATED for new dataset features")
+        self.logger.info("✅ GeneralMedicalParser UPDATED with OCR.space API")
     
     def extract_data(self, image_path: str) -> Dict[str, Any]:
         """
-        UPDATED: General medical document parsing - extracts NEW FEATURES
+        UPDATED: General medical document parsing with OCR.space API
         """
-        self.logger.info(f"🔍 Processing general medical document with NEW FEATURES: {image_path}")
+        self.logger.info(f"🔍 Processing general medical document with OCR.space: {image_path}")
         
         try:
-            text = self._extract_text(image_path)
+            # NEW: Use OCR.space API for text extraction
+            text = self._extract_text_enhanced(image_path)
+            
+            if not text or len(text.strip()) < 10:
+                self.logger.warning("⚠️ Insufficient text extracted by OCR.space in fallback")
+                return {
+                    "error": "Insufficient text extracted", 
+                    "document_type": "general_medical",
+                    "parsing_confidence": "very_low"
+                }
+                
+            self.logger.info(f"📝 OCR.space extracted {len(text)} chars in fallback")
+            
             extracted_data = {}
             
             # Try all patterns for NEW FEATURES
@@ -134,25 +150,69 @@ class GeneralMedicalParser:
             extracted_data['document_type'] = 'general_medical'
             extracted_data['text_length'] = len(text)
             extracted_data['parsing_confidence'] = 'low'
-            extracted_data['parser_used'] = 'fallback_updated'
+            extracted_data['parser_used'] = 'fallback_with_ocr_space'
+            extracted_data['ocr_engine'] = 'ocr_space_api'
             
-            self.logger.info(f"⚠️ General medical document parsed: {len(extracted_data)} NEW fields found")
+            self.logger.info(f"⚠️ General medical document parsed: {len(extracted_data)} fields found")
             return extracted_data
             
         except Exception as e:
             self.logger.error(f"❌ Error parsing general medical document: {e}")
-            return {"error": str(e), "document_type": "general_medical"}
+            return {
+                "error": str(e), 
+                "document_type": "general_medical",
+                "parsing_confidence": "error"
+            }
     
-    def _extract_text(self, image_path: str) -> str:
-        """Extract text from any document"""
+    def _extract_text_enhanced(self, image_path: str) -> str:
+        """
+        NEW: Extract text using OCR.space API with enhanced cleaning
+        """
         try:
-            image = Image.open(image_path)
-            text = pytesseract.image_to_string(image)
-            self.logger.debug(f"📝 Fallback OCR text: {len(text)} chars")
-            return text.lower()
+            # Use OCR.space API for superior text extraction
+            raw_text = self.ocr_reader.extract_text(image_path)
+            
+            if not raw_text:
+                self.logger.warning("❌ No text extracted by OCR.space in fallback")
+                return ""
+            
+            # Enhanced text cleaning for medical documents
+            cleaned_text = self._clean_medical_text(raw_text)
+            self.logger.debug(f"🧹 Fallback cleaned text sample: {cleaned_text[:200]}...")
+            
+            return cleaned_text.lower()
+            
         except Exception as e:
-            self.logger.error(f"❌ Fallback OCR failed: {e}")
+            self.logger.error(f"❌ OCR.space extraction failed in fallback: {e}")
             return ""
+    
+    def _clean_medical_text(self, text: str) -> str:
+        """
+        NEW: Enhanced cleaning for medical OCR text in fallback parser
+        """
+        # Common OCR corrections for medical terms
+        medical_corrections = {
+            'ro5': 'tsh', 'Go1': 'glucose', 'prise': 'profile',
+            'coc': 'cbc', 'trh': 'tsh', 'fo': 'fbs',
+            'dias': 'diastolic', 'sys': 'systolic',
+            'chol': 'cholesterol', 'fbs': 'fasting blood sugar',
+            'hr': 'heart rate', 'wt': 'weight', 'ht': 'height',
+            'bp': 'blood pressure', 'hgt': 'height', 'wgt': 'weight',
+            'yrs': 'years', 'yr': 'year', 'kg': 'kg', 'cm': 'cm',
+            'male': 'm', 'female': 'f',  # Standardize gender
+            'yes': 'y', 'no': 'n'  # Standardize lifestyle factors
+        }
+        
+        cleaned_text = text.lower()
+        
+        # Apply medical term corrections
+        for wrong, correct in medical_corrections.items():
+            cleaned_text = cleaned_text.replace(wrong.lower(), correct)
+        
+        # Remove extra whitespace but preserve structure
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+        
+        return cleaned_text
     
     def _extract_field_enhanced(self, text: str, patterns: list, field_name: str):
         """Enhanced field extraction with multiple patterns"""
@@ -168,7 +228,7 @@ class GeneralMedicalParser:
                 
                 elif field_name in ['height', 'weight']:
                     value = match.group(1)
-                    if value.isdigit() and self._is_valid_anthropometric(field_name, value):
+                    if value and value.isdigit() and self._is_valid_anthropometric(field_name, value):
                         return value
                 
                 elif field_name == 'gender':
@@ -177,7 +237,7 @@ class GeneralMedicalParser:
                 
                 elif field_name in ['age', 'cholesterol', 'glucose', 'heart_rate']:
                     value = match.group(1)
-                    if value.isdigit() and self._is_valid_medical_value(field_name, value):
+                    if value and value.isdigit() and self._is_valid_medical_value(field_name, value):
                         return value
                 
                 elif field_name in ['smoking', 'alcohol_intake', 'physical_activity']:
@@ -196,12 +256,15 @@ class GeneralMedicalParser:
         # Look for BP format like "120/80"
         bp_candidates = re.findall(r'(\d{2,3})\s*/\s*(\d{2,3})', text)
         for systolic, diastolic in bp_candidates:
-            systolic_val, diastolic_val = int(systolic), int(diastolic)
-            if (70 <= systolic_val <= 250 and 40 <= diastolic_val <= 150):
-                bp_data['systolic_bp'] = systolic_val
-                bp_data['diastolic_bp'] = diastolic_val
-                self.logger.info("✅ Smart BP detection successful")
-                break
+            try:
+                systolic_val, diastolic_val = int(systolic), int(diastolic)
+                if (70 <= systolic_val <= 250 and 40 <= diastolic_val <= 150):
+                    bp_data['systolic_bp'] = systolic_val
+                    bp_data['diastolic_bp'] = diastolic_val
+                    self.logger.info("✅ Smart BP detection successful in fallback")
+                    break
+            except:
+                continue
         
         return bp_data
     
@@ -256,3 +319,36 @@ class GeneralMedicalParser:
             'cholesterol', 'glucose', 'heart_rate', 'smoking', 'alcohol_intake', 
             'physical_activity', 'bmi'
         ]
+    
+    def test_ocr_fallback(self, image_path: str) -> Dict[str, Any]:
+        """
+        NEW: Test method to verify OCR.space integration in fallback parser
+        """
+        self.logger.info(f"🧪 Testing OCR.space fallback with: {image_path}")
+        
+        try:
+            # Extract raw text using OCR.space
+            raw_text = self.ocr_reader.extract_text(image_path)
+            
+            # Clean the text
+            cleaned_text = self._clean_medical_text(raw_text)
+            
+            # Try to extract data
+            extracted_data = self.extract_data(image_path)
+            
+            return {
+                "status": "success",
+                "raw_text_length": len(raw_text),
+                "cleaned_text_length": len(cleaned_text),
+                "extracted_fields": list(extracted_data.keys()) if isinstance(extracted_data, dict) else [],
+                "parser_type": "fallback_with_ocr_space",
+                "text_preview": cleaned_text[:500] + "..." if len(cleaned_text) > 500 else cleaned_text
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ OCR.space fallback test failed: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "parser_type": "fallback_with_ocr_space"
+            }

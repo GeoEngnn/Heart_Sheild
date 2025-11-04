@@ -1,16 +1,20 @@
-# ocr/parsers/clinic_notes_parser.py - UPDATED FOR NEW DATASET
+# ocr/parsers/clinic_notes_parser.py - UPDATED WITH OCR.SPACE API
 import re
-import pytesseract
-from PIL import Image
 import logging
 from typing import Dict, Any
 
+# Import the OCR.space reader from universal_reader
+from ..universal_reader import OCRSpaceReader
+
 class ClinicNotesParser:
     """
-    UPDATED: Parser for clinic notes and progress notes - now extracts NEW FEATURES
+    UPDATED: Parser for clinic notes and progress notes - NOW WITH OCR.SPACE API
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        
+        # NEW: Use OCR.space API for text extraction
+        self.ocr_reader = OCRSpaceReader()
         
         # UPDATED: Clinic notes patterns for NEW FEATURES
         self.clinic_patterns = {
@@ -107,16 +111,28 @@ class ClinicNotesParser:
             ]
         }
         
-        self.logger.info("✅ ClinicNotesParser UPDATED for new dataset features")
+        self.logger.info("✅ ClinicNotesParser UPDATED with OCR.space API")
     
     def extract_data(self, image_path: str) -> Dict[str, Any]:
         """
-        UPDATED: Extract data from clinic notes with NEW FEATURES
+        UPDATED: Extract data from clinic notes with OCR.SPACE API
         """
-        self.logger.info(f"📋 Processing clinic notes with NEW FEATURES: {image_path}")
+        self.logger.info(f"📋 Processing clinic notes with OCR.space: {image_path}")
         
         try:
-            text = self._extract_text(image_path)
+            # NEW: Use OCR.space API for text extraction
+            text = self._extract_text_enhanced(image_path)
+            
+            if not text or len(text.strip()) < 10:
+                self.logger.warning("⚠️ Insufficient text extracted by OCR.space in clinic notes parser")
+                return {
+                    "error": "Insufficient text extracted", 
+                    "document_type": "clinic_notes",
+                    "parsing_confidence": "very_low"
+                }
+                
+            self.logger.info(f"📝 OCR.space extracted {len(text)} chars from clinic notes")
+            
             extracted_data = {}
             
             # Extract structured data for NEW FEATURES
@@ -160,24 +176,73 @@ class ClinicNotesParser:
             extracted_data['document_type'] = 'clinic_notes'
             extracted_data['has_clinical_data'] = len([k for k in extracted_data.keys() if k not in ['document_type', 'has_clinical_data']]) > 2
             extracted_data['parsing_confidence'] = 'medium'
+            extracted_data['ocr_engine'] = 'ocr_space_api'
             
-            self.logger.info(f"✅ Clinic notes parsed: {len(extracted_data)} NEW fields found")
+            self.logger.info(f"✅ Clinic notes parsed: {len(extracted_data)} fields found")
             return extracted_data
             
         except Exception as e:
             self.logger.error(f"❌ Error parsing clinic notes: {e}")
-            return {"error": str(e), "document_type": "clinic_notes"}
+            return {
+                "error": str(e), 
+                "document_type": "clinic_notes",
+                "parsing_confidence": "error"
+            }
     
-    def _extract_text(self, image_path: str) -> str:
-        """Extract text from clinic notes"""
+    def _extract_text_enhanced(self, image_path: str) -> str:
+        """
+        NEW: Extract text using OCR.space API with enhanced cleaning
+        """
         try:
-            image = Image.open(image_path)
-            text = pytesseract.image_to_string(image)
-            self.logger.debug(f"📝 Clinic notes OCR: {len(text)} chars")
-            return text.lower()
+            # Use OCR.space API for superior text extraction
+            raw_text = self.ocr_reader.extract_text(image_path)
+            
+            if not raw_text:
+                self.logger.warning("❌ No text extracted by OCR.space in clinic notes parser")
+                return ""
+            
+            # Enhanced text cleaning for medical documents
+            cleaned_text = self._clean_medical_text(raw_text)
+            self.logger.debug(f"🧹 Clinic notes cleaned text sample: {cleaned_text[:200]}...")
+            
+            return cleaned_text.lower()
+            
         except Exception as e:
-            self.logger.error(f"❌ Clinic notes OCR failed: {e}")
+            self.logger.error(f"❌ OCR.space extraction failed in clinic notes parser: {e}")
             return ""
+    
+    def _clean_medical_text(self, text: str) -> str:
+        """
+        NEW: Enhanced cleaning for medical OCR text in clinic notes
+        """
+        # Common OCR corrections for medical terms in clinic notes
+        medical_corrections = {
+            'ro5': 'tsh', 'Go1': 'glucose', 'prise': 'profile',
+            'coc': 'cbc', 'trh': 'tsh', 'fo': 'fbs',
+            'dias': 'diastolic', 'sys': 'systolic',
+            'chol': 'cholesterol', 'fbs': 'fasting blood sugar',
+            'hr': 'heart rate', 'wt': 'weight', 'ht': 'height',
+            'bp': 'blood pressure', 'hgt': 'height', 'wgt': 'weight',
+            'yrs': 'years', 'yr': 'year', 'kg': 'kg', 'cm': 'cm',
+            'male': 'm', 'female': 'f',  # Standardize gender
+            'yes': 'y', 'no': 'n',  # Standardize lifestyle factors
+            'complains': 'complaints', 'complains of': 'complaints of',
+            'denies': 'denies', 'negative for': 'negative for',
+            'positive for': 'positive for', 'ros': 'review of systems',
+            'pmh': 'past medical history', 'fh': 'family history',
+            'sh': 'social history', 'soap': 'soap note'
+        }
+        
+        cleaned_text = text.lower()
+        
+        # Apply medical term corrections
+        for wrong, correct in medical_corrections.items():
+            cleaned_text = cleaned_text.replace(wrong.lower(), correct)
+        
+        # Remove extra whitespace but preserve structure
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+        
+        return cleaned_text
     
     def _extract_field_enhanced(self, text: str, patterns: list, field_name: str):
         """Enhanced field extraction with multiple patterns"""
@@ -234,12 +299,15 @@ class ClinicNotesParser:
         if 'systolic_bp' not in extracted_data or 'diastolic_bp' not in extracted_data:
             bp_candidates = re.findall(r'(\d{2,3})\s*/\s*(\d{2,3})', text)
             for systolic, diastolic in bp_candidates:
-                systolic_val, diastolic_val = int(systolic), int(diastolic)
-                if (70 <= systolic_val <= 250 and 40 <= diastolic_val <= 150):
-                    extracted_data['systolic_bp'] = systolic_val
-                    extracted_data['diastolic_bp'] = diastolic_val
-                    self.logger.info("✅ Casual BP detection in clinic notes")
-                    break
+                try:
+                    systolic_val, diastolic_val = int(systolic), int(diastolic)
+                    if (70 <= systolic_val <= 250 and 40 <= diastolic_val <= 150):
+                        extracted_data['systolic_bp'] = systolic_val
+                        extracted_data['diastolic_bp'] = diastolic_val
+                        self.logger.info("✅ Casual BP detection in clinic notes")
+                        break
+                except:
+                    continue
         
         # Look for casual mentions of lifestyle factors
         if 'smoking' not in extracted_data:
@@ -352,3 +420,36 @@ class ClinicNotesParser:
             'cholesterol', 'glucose', 'heart_rate', 'smoking', 'alcohol_intake', 
             'physical_activity', 'bmi', 'symptoms', 'assessment', 'plan'
         ]
+    
+    def test_ocr_clinic_notes(self, image_path: str) -> Dict[str, Any]:
+        """
+        NEW: Test method to verify OCR.space integration in clinic notes parser
+        """
+        self.logger.info(f"🧪 Testing OCR.space clinic notes parser with: {image_path}")
+        
+        try:
+            # Extract raw text using OCR.space
+            raw_text = self.ocr_reader.extract_text(image_path)
+            
+            # Clean the text
+            cleaned_text = self._clean_medical_text(raw_text)
+            
+            # Try to extract data
+            extracted_data = self.extract_data(image_path)
+            
+            return {
+                "status": "success",
+                "raw_text_length": len(raw_text),
+                "cleaned_text_length": len(cleaned_text),
+                "extracted_fields": list(extracted_data.keys()) if isinstance(extracted_data, dict) else [],
+                "parser_type": "clinic_notes_with_ocr_space",
+                "text_preview": cleaned_text[:500] + "..." if len(cleaned_text) > 500 else cleaned_text
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ OCR.space clinic notes test failed: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "parser_type": "clinic_notes_with_ocr_space"
+            }

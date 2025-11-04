@@ -1,16 +1,20 @@
-# ocr/parsers/discharge_parser.py - UPDATED FOR NEW DATASET
+# ocr/parsers/discharge_parser.py - UPDATED WITH OCR.SPACE API
 import re
-import pytesseract
-from PIL import Image
 import logging
 from typing import Dict, Any
 
+# Import the OCR.space reader from universal_reader
+from ..universal_reader import OCRSpaceReader
+
 class DischargeSummaryParser:
     """
-    UPDATED: Parser for hospital discharge summaries - now extracts NEW FEATURES
+    UPDATED: Parser for hospital discharge summaries - NOW WITH OCR.SPACE API
     """
     def __init__(self):
         self.logger = logging.getLogger(__name__)
+        
+        # NEW: Use OCR.space API for text extraction
+        self.ocr_reader = OCRSpaceReader()
         
         # UPDATED: Discharge summary patterns for NEW FEATURES
         self.discharge_patterns = {
@@ -97,16 +101,28 @@ class DischargeSummaryParser:
             ]
         }
         
-        self.logger.info("✅ DischargeSummaryParser UPDATED for new dataset features")
+        self.logger.info("✅ DischargeSummaryParser UPDATED with OCR.space API")
     
     def extract_data(self, image_path: str) -> Dict[str, Any]:
         """
-        UPDATED: Extract data from discharge summaries with NEW FEATURES
+        UPDATED: Extract data from discharge summaries with OCR.SPACE API
         """
-        self.logger.info(f"🏥 Processing discharge summary with NEW FEATURES: {image_path}")
+        self.logger.info(f"🏥 Processing discharge summary with OCR.space: {image_path}")
         
         try:
-            text = self._extract_text(image_path)
+            # NEW: Use OCR.space API for text extraction
+            text = self._extract_text_enhanced(image_path)
+            
+            if not text or len(text.strip()) < 10:
+                self.logger.warning("⚠️ Insufficient text extracted by OCR.space in discharge parser")
+                return {
+                    "error": "Insufficient text extracted", 
+                    "document_type": "discharge_summary",
+                    "parsing_confidence": "very_low"
+                }
+                
+            self.logger.info(f"📝 OCR.space extracted {len(text)} chars from discharge summary")
+            
             extracted_data = {}
             
             # Extract structured data for NEW FEATURES
@@ -154,24 +170,71 @@ class DischargeSummaryParser:
             extracted_data['document_type'] = 'discharge_summary'
             extracted_data['text_snippet'] = text[:300] + "..." if len(text) > 300 else text
             extracted_data['parsing_confidence'] = 'medium'
+            extracted_data['ocr_engine'] = 'ocr_space_api'
             
-            self.logger.info(f"✅ Discharge summary parsed: {len(extracted_data)} NEW fields found")
+            self.logger.info(f"✅ Discharge summary parsed: {len(extracted_data)} fields found")
             return extracted_data
             
         except Exception as e:
             self.logger.error(f"❌ Error parsing discharge summary: {e}")
-            return {"error": str(e), "document_type": "discharge_summary"}
+            return {
+                "error": str(e), 
+                "document_type": "discharge_summary",
+                "parsing_confidence": "error"
+            }
     
-    def _extract_text(self, image_path: str) -> str:
-        """Extract text from discharge summary"""
+    def _extract_text_enhanced(self, image_path: str) -> str:
+        """
+        NEW: Extract text using OCR.space API with enhanced cleaning
+        """
         try:
-            image = Image.open(image_path)
-            text = pytesseract.image_to_string(image)
-            self.logger.debug(f"📝 Discharge summary OCR: {len(text)} chars")
-            return text.lower()
+            # Use OCR.space API for superior text extraction
+            raw_text = self.ocr_reader.extract_text(image_path)
+            
+            if not raw_text:
+                self.logger.warning("❌ No text extracted by OCR.space in discharge parser")
+                return ""
+            
+            # Enhanced text cleaning for medical documents
+            cleaned_text = self._clean_medical_text(raw_text)
+            self.logger.debug(f"🧹 Discharge cleaned text sample: {cleaned_text[:200]}...")
+            
+            return cleaned_text.lower()
+            
         except Exception as e:
-            self.logger.error(f"❌ Discharge summary OCR failed: {e}")
+            self.logger.error(f"❌ OCR.space extraction failed in discharge parser: {e}")
             return ""
+    
+    def _clean_medical_text(self, text: str) -> str:
+        """
+        NEW: Enhanced cleaning for medical OCR text in discharge summaries
+        """
+        # Common OCR corrections for medical terms in discharge summaries
+        medical_corrections = {
+            'ro5': 'tsh', 'Go1': 'glucose', 'prise': 'profile',
+            'coc': 'cbc', 'trh': 'tsh', 'fo': 'fbs',
+            'dias': 'diastolic', 'sys': 'systolic',
+            'chol': 'cholesterol', 'fbs': 'fasting blood sugar',
+            'hr': 'heart rate', 'wt': 'weight', 'ht': 'height',
+            'bp': 'blood pressure', 'hgt': 'height', 'wgt': 'weight',
+            'yrs': 'years', 'yr': 'year', 'kg': 'kg', 'cm': 'cm',
+            'male': 'm', 'female': 'f',  # Standardize gender
+            'yes': 'y', 'no': 'n',  # Standardize lifestyle factors
+            'meds': 'medications', 'dx': 'diagnosis',
+            'admit': 'admission', 'dc': 'discharge',
+            'hx': 'history', 'tx': 'treatment'
+        }
+        
+        cleaned_text = text.lower()
+        
+        # Apply medical term corrections
+        for wrong, correct in medical_corrections.items():
+            cleaned_text = cleaned_text.replace(wrong.lower(), correct)
+        
+        # Remove extra whitespace but preserve structure
+        cleaned_text = re.sub(r'\s+', ' ', cleaned_text)
+        
+        return cleaned_text
     
     def _extract_field_enhanced(self, text: str, patterns: list, field_name: str):
         """Enhanced field extraction with multiple patterns"""
@@ -300,3 +363,36 @@ class DischargeSummaryParser:
             'cholesterol', 'glucose', 'heart_rate', 'smoking', 'alcohol_intake', 
             'physical_activity', 'bmi', 'diagnosis', 'medications'
         ]
+    
+    def test_ocr_discharge(self, image_path: str) -> Dict[str, Any]:
+        """
+        NEW: Test method to verify OCR.space integration in discharge parser
+        """
+        self.logger.info(f"🧪 Testing OCR.space discharge parser with: {image_path}")
+        
+        try:
+            # Extract raw text using OCR.space
+            raw_text = self.ocr_reader.extract_text(image_path)
+            
+            # Clean the text
+            cleaned_text = self._clean_medical_text(raw_text)
+            
+            # Try to extract data
+            extracted_data = self.extract_data(image_path)
+            
+            return {
+                "status": "success",
+                "raw_text_length": len(raw_text),
+                "cleaned_text_length": len(cleaned_text),
+                "extracted_fields": list(extracted_data.keys()) if isinstance(extracted_data, dict) else [],
+                "parser_type": "discharge_with_ocr_space",
+                "text_preview": cleaned_text[:500] + "..." if len(cleaned_text) > 500 else cleaned_text
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ OCR.space discharge test failed: {e}")
+            return {
+                "status": "error",
+                "message": str(e),
+                "parser_type": "discharge_with_ocr_space"
+            }

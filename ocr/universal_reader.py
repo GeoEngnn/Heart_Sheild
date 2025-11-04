@@ -1,6 +1,12 @@
-# ocr/universal_reader.py - UPDATED FOR NEW DATASET
+# ocr/universal_reader.py - UPDATED WITH OCR.SPACE API
+import requests
 import logging
 from typing import Dict, Any
+from PIL import Image
+import pytesseract
+
+# Import OCR.space configuration
+from .config import OCR_SPACE_API_KEY, OCR_SPACE_API_URL, OCR_CONFIG
 
 # Import from the CORRECT paths
 from .utils.document_classifier import DocumentClassifier
@@ -13,12 +19,87 @@ from .parsers.fallback_parser import GeneralMedicalParser
 # Set up basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-class UniversalMedicalReader:
+class OCRSpaceReader:
     """
-    UPDATED: Orchestrates medical document processing for NEW DATASET FEATURES
+    NEW: OCR.space API integration for superior text extraction
     """
     def __init__(self):
-        """Initializes the classifier, parsers, and validator for new features."""
+        self.api_key = OCR_SPACE_API_KEY
+        self.api_url = OCR_SPACE_API_URL
+        self.logger = logging.getLogger(__name__)
+        
+    def extract_text(self, image_path: str) -> str:
+        """
+        Extract text from image using OCR.space API with fallback to Tesseract
+        """
+        try:
+            self.logger.info(f"🔍 Using OCR.space API for: {image_path}")
+            
+            with open(image_path, 'rb') as image_file:
+                response = requests.post(
+                    self.api_url,
+                    files={'image': image_file},
+                    data=OCR_CONFIG,
+                    headers={'apikey': self.api_key}
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result['IsErroredOnProcessing']:
+                    error_msg = result['ErrorMessage'][0] if result['ErrorMessage'] else "Unknown API error"
+                    self.logger.error(f"❌ OCR.space API error: {error_msg}")
+                    return self._fallback_to_tesseract(image_path)
+                
+                # Extract text from all parsed results
+                text = self._parse_ocr_result(result)
+                self.logger.info(f"✅ OCR.space extracted {len(text)} characters")
+                return text
+            else:
+                self.logger.error(f"❌ API request failed: {response.status_code}")
+                return self._fallback_to_tesseract(image_path)
+                
+        except Exception as e:
+            self.logger.error(f"❌ OCR.space processing failed: {e}")
+            return self._fallback_to_tesseract(image_path)
+    
+    def _parse_ocr_result(self, result: Dict[str, Any]) -> str:
+        """
+        Parse OCR.space API response and extract text
+        """
+        text_parts = []
+        
+        if 'ParsedResults' in result:
+            for parsed_result in result['ParsedResults']:
+                if 'ParsedText' in parsed_result:
+                    text_parts.append(parsed_result['ParsedText'].strip())
+        
+        full_text = '\n'.join(text_parts)
+        self.logger.debug(f"📄 Raw OCR.space text: {full_text[:500]}...")
+        return full_text
+    
+    def _fallback_to_tesseract(self, image_path: str) -> str:
+        """
+        Fallback to Tesseract if OCR.space fails
+        """
+        self.logger.info("🔄 Falling back to Tesseract OCR")
+        try:
+            image = Image.open(image_path)
+            text = pytesseract.image_to_string(image)
+            self.logger.info(f"✅ Tesseract extracted {len(text)} characters")
+            return text
+        except Exception as e:
+            self.logger.error(f"❌ Tesseract fallback also failed: {e}")
+            return ""
+
+class UniversalMedicalReader:
+    """
+    UPDATED: Now uses OCR.space API for superior text extraction
+    """
+    def __init__(self):
+        """Initializes the OCR reader, classifier, parsers, and validator"""
+        # NEW: Use OCR.space API for text extraction
+        self.ocr_reader = OCRSpaceReader()
+        
         self.classifier = DocumentClassifier()
         self.parsers = {
             'lab_report': LabReportParser(),
@@ -28,21 +109,39 @@ class UniversalMedicalReader:
         }
         self.validator = DataValidator()
         
-        # NEW: Define required features for the new model
+        # Define required features for the new model
         self.required_features = [
             'Age', 'Height', 'Weight', 'Gender', 'Systolic_BP', 'Diastolic_BP',
             'Cholesterol', 'Glucose', 'Smoking', 'Alcohol_Intake', 'Physical_Activity', 'BMI'
         ]
         
-        logging.info("✅ UniversalMedicalReader UPDATED for new dataset features.")
+        logging.info("✅ UniversalMedicalReader UPDATED with OCR.space API integration.")
+    
+    def extract_text_from_image(self, image_path: str) -> str:
+        """
+        NEW: Direct text extraction using OCR.space API
+        """
+        return self.ocr_reader.extract_text(image_path)
     
     def process_any_document(self, image_path: str) -> Dict[str, Any]:
         """
-        Enhanced to work with NEW DATASET features and ML predictions
+        Enhanced to use OCR.space API and work with NEW DATASET features
         """
-        logging.info(f"🚀 Starting to process document: {image_path}")
+        logging.info(f"🚀 Starting to process document with OCR.space: {image_path}")
         try:
-            # 1. Classify the document type
+            # NEW: First extract text using OCR.space API
+            extracted_text = self.extract_text_from_image(image_path)
+            logging.info(f"📄 OCR.space extracted {len(extracted_text)} characters")
+            
+            if not extracted_text or len(extracted_text.strip()) < 10:
+                logging.warning("⚠️ Insufficient text extracted from document")
+                return {
+                    "status": "error",
+                    "message": "Could not extract sufficient text from document",
+                    "extracted_text_preview": extracted_text[:200] if extracted_text else "None"
+                }
+
+            # 1. Classify the document type (pass text instead of image path if your classifier supports it)
             doc_type = self.classifier.classify_document_type(image_path)
             logging.info(f"📄 Document classified as: '{doc_type}'")
 
@@ -54,18 +153,18 @@ class UniversalMedicalReader:
             extracted_data = parser.extract_data(image_path)
             logging.info(f"🔍 Data extracted: {list(extracted_data.keys())}")
 
-            # 4. UPDATED: Validate and prepare the data for NEW FEATURES prediction
+            # 4. Validate and prepare the data for NEW FEATURES prediction
             validation_result = self.validator.validate_and_prepare_prediction(extracted_data)
             logging.info(f"🛡️ Validation complete. Status: {validation_result.get('status', 'UNKNOWN')}")
 
-            # 5. UPDATED: MAKE PREDICTION with NEW FEATURES if data is ready!
+            # 5. MAKE PREDICTION with NEW FEATURES if data is ready!
             prediction_result = None
             if validation_result.get('status') == 'READY_FOR_PREDICTION':
                 try:
                     # Import ML predictor
                     from ml.predictor import predictor
                     
-                    # UPDATED: Prepare data for new ML model
+                    # Prepare data for new ML model
                     ml_input = self._prepare_for_new_ml_model(validation_result)
                     
                     if ml_input:
@@ -88,7 +187,9 @@ class UniversalMedicalReader:
                 "extracted_data": extracted_data,
                 "validation_result": validation_result,
                 "prediction_result": prediction_result,
-                "model_features": self.required_features  # NEW: Show expected features
+                "model_features": self.required_features,
+                "ocr_engine": "OCR.space API",  # NEW: Show which OCR engine was used
+                "text_length": len(extracted_text)  # NEW: Show how much text was extracted
             }
             
         except Exception as e:
@@ -100,7 +201,8 @@ class UniversalMedicalReader:
                 "extracted_data": None,
                 "validation_result": None,
                 "prediction_result": None,
-                "model_features": self.required_features
+                "model_features": self.required_features,
+                "ocr_engine": "Unknown"
             }
     
     def _prepare_for_new_ml_model(self, validation_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -130,7 +232,7 @@ class UniversalMedicalReader:
             # Apply mapping
             for ocr_key, ml_key in mapping.items():
                 if ocr_key in extracted_data:
-                    prepared_data[ml_key] = extracted_data[ocrr_key]
+                    prepared_data[ml_key] = extracted_data[ocr_key]  # Fixed typo: ocrr_key → ocr_key
             
             # Calculate BMI if not provided but height/weight available
             if 'BMI' not in prepared_data and 'Height' in prepared_data and 'Weight' in prepared_data:
@@ -194,7 +296,7 @@ class UniversalMedicalReader:
     
     def check_feature_coverage(self, extracted_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        NEW: Check how well the extracted data covers required features
+        Check how well the extracted data covers required features
         """
         coverage = {
             'total_required': len(self.required_features),
@@ -216,4 +318,7 @@ class UniversalMedicalReader:
         
         coverage['coverage_percentage'] = (coverage['extracted_count'] / coverage['total_required']) * 100
         
-        return coverage
+        return coverage  # Fixed: removed extra slash
+
+# Create a global instance for easy import
+universal_reader = UniversalMedicalReader()
