@@ -1,4 +1,4 @@
-# ocr/universal_reader.py - UPDATED WITH OCR.SPACE API
+# ocr/universal_reader.py - ENHANCED WITH SMART DISPLAY SUPPORT
 import requests
 import logging
 from typing import Dict, Any
@@ -21,7 +21,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 class OCRSpaceReader:
     """
-    NEW: OCR.space API integration for superior text extraction
+    OCR.space API integration for superior text extraction
     """
     def __init__(self):
         self.api_key = OCR_SPACE_API_KEY
@@ -93,11 +93,11 @@ class OCRSpaceReader:
 
 class UniversalMedicalReader:
     """
-    UPDATED: Now uses OCR.space API for superior text extraction
+    ENHANCED: Universal medical document reader with SMART DISPLAY support
     """
     def __init__(self):
         """Initializes the OCR reader, classifier, parsers, and validator"""
-        # NEW: Use OCR.space API for text extraction
+        # Use OCR.space API for text extraction
         self.ocr_reader = OCRSpaceReader()
         
         self.classifier = DocumentClassifier()
@@ -115,21 +115,21 @@ class UniversalMedicalReader:
             'Cholesterol', 'Glucose', 'Smoking', 'Alcohol_Intake', 'Physical_Activity', 'BMI'
         ]
         
-        logging.info("✅ UniversalMedicalReader UPDATED with OCR.space API integration.")
+        logging.info("✅ UniversalMedicalReader ENHANCED with smart display support!")
     
     def extract_text_from_image(self, image_path: str) -> str:
         """
-        NEW: Direct text extraction using OCR.space API
+        Direct text extraction using OCR.space API
         """
         return self.ocr_reader.extract_text(image_path)
     
     def process_any_document(self, image_path: str) -> Dict[str, Any]:
         """
-        Enhanced to use OCR.space API and work with NEW DATASET features
+        ENHANCED: Process any medical document with SMART DISPLAY output
         """
         logging.info(f"🚀 Starting to process document with OCR.space: {image_path}")
         try:
-            # NEW: First extract text using OCR.space API
+            # First extract text using OCR.space API
             extracted_text = self.extract_text_from_image(image_path)
             logging.info(f"📄 OCR.space extracted {len(extracted_text)} characters")
             
@@ -138,10 +138,11 @@ class UniversalMedicalReader:
                 return {
                     "status": "error",
                     "message": "Could not extract sufficient text from document",
-                    "extracted_text_preview": extracted_text[:200] if extracted_text else "None"
+                    "extracted_text_preview": extracted_text[:200] if extracted_text else "None",
+                    "success": False
                 }
 
-            # 1. Classify the document type (pass text instead of image path if your classifier supports it)
+            # 1. Classify the document type
             doc_type = self.classifier.classify_document_type(image_path)
             logging.info(f"📄 Document classified as: '{doc_type}'")
 
@@ -149,9 +150,27 @@ class UniversalMedicalReader:
             parser = self.parsers.get(doc_type, self.parsers['fallback'])
             logging.info(f"🔧 Using parser: {parser.__class__.__name__}")
 
-            # 3. Extract data using the selected parser
-            extracted_data = parser.extract_data(image_path)
-            logging.info(f"🔍 Data extracted: {list(extracted_data.keys())}")
+            # 3. Extract data using the selected parser (now returns display_data)
+            parser_result = parser.extract_data(image_path)
+            logging.info(f"🔍 Data extracted: {list(parser_result.keys())}")
+
+            # Check if parser returned success
+            if not parser_result.get('success', True):
+                logging.warning(f"⚠️ Parser returned error: {parser_result.get('error', 'Unknown error')}")
+                return {
+                    "status": "error",
+                    "message": parser_result.get('error', 'Parser failed'),
+                    "document_type": doc_type,
+                    "success": False
+                }
+
+            # Extract both raw and display data
+            extracted_data = parser_result.get('raw_data', {})
+            display_data = parser_result.get('display_data', [])  # NEW: Smart display data
+            
+            # If no display_data, create basic display from raw data
+            if not display_data and extracted_data:
+                display_data = self._create_basic_display(extracted_data)
 
             # 4. Validate and prepare the data for NEW FEATURES prediction
             validation_result = self.validator.validate_and_prepare_prediction(extracted_data)
@@ -181,16 +200,26 @@ class UniversalMedicalReader:
                     logging.warning(f"⚠️ Prediction failed: {e}")
                     prediction_result = {"error": "Prediction unavailable", "message": str(e)}
 
-            return {
+            # NEW: Enhanced return with display_data
+            result = {
                 "status": "success",
                 "document_type": doc_type,
-                "extracted_data": extracted_data,
+                "parser_used": parser.__class__.__name__,
+                "raw_data": extracted_data,
+                "display_data": display_data,  # NEW: Clean formatted data for UI
                 "validation_result": validation_result,
                 "prediction_result": prediction_result,
                 "model_features": self.required_features,
-                "ocr_engine": "OCR.space API",  # NEW: Show which OCR engine was used
-                "text_length": len(extracted_text)  # NEW: Show how much text was extracted
+                "ocr_engine": "OCR.space API",
+                "text_length": len(extracted_text),
+                "success": True
             }
+            
+            # Add feature coverage info
+            coverage = self.check_feature_coverage(extracted_data)
+            result["feature_coverage"] = coverage
+            
+            return result
             
         except Exception as e:
             logging.error(f"❌ An error occurred during document processing: {e}", exc_info=True)
@@ -198,16 +227,70 @@ class UniversalMedicalReader:
                 "status": "error",
                 "message": str(e),
                 "document_type": None,
-                "extracted_data": None,
+                "raw_data": None,
+                "display_data": [],
                 "validation_result": None,
                 "prediction_result": None,
                 "model_features": self.required_features,
-                "ocr_engine": "Unknown"
+                "ocr_engine": "Unknown",
+                "success": False
             }
+    
+    def _create_basic_display(self, extracted_data: Dict[str, Any]) -> List[Dict[str, str]]:
+        """
+        Create basic display data if parser doesn't provide it
+        """
+        display_list = []
+        
+        # Simple mapping for display
+        display_mapping = {
+            'age': 'Age',
+            'height': 'Height',
+            'weight': 'Weight',
+            'gender': 'Gender',
+            'blood_pressure': 'Blood Pressure',
+            'systolic_bp': 'Systolic BP',
+            'diastolic_bp': 'Diastolic BP',
+            'cholesterol': 'Cholesterol',
+            'glucose': 'Glucose',
+            'heart_rate': 'Heart Rate',
+            'bmi': 'BMI'
+        }
+        
+        unit_mapping = {
+            'age': 'years',
+            'height': 'cm',
+            'weight': 'kg',
+            'blood_pressure': 'mmHg',
+            'systolic_bp': 'mmHg',
+            'diastolic_bp': 'mmHg',
+            'cholesterol': 'mg/dL',
+            'glucose': 'mg/dL',
+            'heart_rate': 'bpm',
+            'bmi': 'kg/m²'
+        }
+        
+        for field, value in extracted_data.items():
+            if field in display_mapping and value not in [None, '']:
+                display_name = display_mapping[field]
+                unit = unit_mapping.get(field, '')
+                
+                if unit:
+                    display_value = f"{value} {unit}"
+                else:
+                    display_value = str(value)
+                
+                display_list.append({
+                    'field': display_name,
+                    'value': display_value,
+                    'icon': '✅'
+                })
+        
+        return display_list
     
     def _prepare_for_new_ml_model(self, validation_result: Dict[str, Any]) -> Dict[str, Any]:
         """
-        UPDATED: Prepare extracted data for the NEW ML model with new features
+        Prepare extracted data for the NEW ML model with new features
         """
         try:
             extracted_data = validation_result.get('validated_data', {})
@@ -232,7 +315,7 @@ class UniversalMedicalReader:
             # Apply mapping
             for ocr_key, ml_key in mapping.items():
                 if ocr_key in extracted_data:
-                    prepared_data[ml_key] = extracted_data[ocr_key]  # Fixed typo: ocrr_key → ocr_key
+                    prepared_data[ml_key] = extracted_data[ocr_key]
             
             # Calculate BMI if not provided but height/weight available
             if 'BMI' not in prepared_data and 'Height' in prepared_data and 'Weight' in prepared_data:
@@ -318,7 +401,7 @@ class UniversalMedicalReader:
         
         coverage['coverage_percentage'] = (coverage['extracted_count'] / coverage['total_required']) * 100
         
-        return coverage  # Fixed: removed extra slash
+        return coverage
 
 # Create a global instance for easy import
 universal_reader = UniversalMedicalReader()
