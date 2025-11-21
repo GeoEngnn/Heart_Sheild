@@ -27,7 +27,22 @@ import gc
 # Add current directory to Python path for imports
 sys.path.append(os.path.dirname(__file__))
 
+from flask_cors import CORS
+
+# Enhanced CORS configuration - Add this right after creating your Flask app
 app = Flask(__name__)
+CORS(app, resources={
+    r"/api/*": {
+        "origins": ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept"]
+    },
+    r"/*": {
+        "origins": "*",  # Allow all origins for other routes
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization", "Accept"]
+    }
+})
 app.secret_key = 'heartshield_professional_ui_2024'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['DATABASE'] = 'database/heartshield.db'
@@ -40,12 +55,16 @@ os.makedirs('templates', exist_ok=True)
 
 # ===== GEMINI API CONFIGURATION =====
 GEMINI_API_KEY = "AIzaSyANtvyv4_LSMGo1Sk0sbLOVFGmNu6txYRU"  
-try:
-    genai.configure(api_key=GEMINI_API_KEY)
-    GEMINI_AVAILABLE = True
-    print("✅ Gemini API configured successfully!")
-except Exception as e:
-    print(f"❌ Gemini API configuration failed: {e}")
+if GEMINI_API_KEY:
+    try:
+        genai.configure(api_key=GEMINI_API_KEY)
+        GEMINI_AVAILABLE = True
+        print("✅ Gemini API initialized successfully")
+    except Exception as e:
+        print("❌ Gemini initialization failed:", e)
+        GEMINI_AVAILABLE = False
+else:
+    print("❌ GEMINI_API_KEY not found. Gemini disabled.")
     GEMINI_AVAILABLE = False
 
 # ===== FILE CLEANUP UTILITIES =====
@@ -1128,7 +1147,7 @@ def test_prediction():
                 </div>
 
                 <div class="form-section">
-                    <h3>❤️ Vital Signs</h3>
+                    <h3>[HEART] Vital Signs</h3>
                     <div class="form-grid">
                         <label>Systolic BP (mmHg): <input type="number" name="Systolic_BP" value="125" min="60" max="250" required></label>
                         <label>Diastolic BP (mmHg): <input type="number" name="Diastolic_BP" value="85" min="40" max="150" required></label>
@@ -1263,6 +1282,404 @@ def health_check():
         "features": "NEW FEATURES: Age, Height, Weight, BP, Cholesterol, Glucose, Lifestyle, Enhanced Gemini AI OCR"
     })
 
+# ===== BEGIN: REACT-API ENDPOINTS (Add above app.run block) =====
+
+# Simple CORS helper so React dev server can call these endpoints during development
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,POST,PUT,DELETE,OPTIONS'
+    return response
+
+# -------------------------
+# Helper: serialize sqlite row to dict
+# -------------------------
+def row_to_dict(row):
+    if row is None:
+        return None
+    return {k: row[k] for k in row.keys()}
+
+# -------------------------
+# /api/register  -> register a new user
+# Accepts JSON or form data:
+# { username, email, password, full_name (opt), age (opt) }
+# -------------------------
+@app.route('/api/register', methods=['POST'])
+def api_register():
+    try:
+        data = request.get_json() if request.is_json else request.form.to_dict()
+        username = data.get('username') or data.get('user') or data.get('name')
+        email = data.get('email')
+        password = data.get('password')
+        full_name = data.get('full_name') or data.get('fullName') or None
+        age = data.get('age')
+
+        if not username or not email or not password:
+            return jsonify({"success": False, "error": "username, email and password are required"}), 400
+
+        password_hash = generate_password_hash(password)
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "INSERT INTO users (username, email, password_hash, full_name, age) VALUES (?, ?, ?, ?, ?)",
+                (username, email, password_hash, full_name, int(age) if age else None)
+            )
+            conn.commit()
+            user_id = cur.lastrowid
+        except sqlite3.IntegrityError as e:
+            conn.close()
+            message = "Username or email already exists."
+            return jsonify({"success": False, "error": message}), 409
+        conn.close()
+
+        return jsonify({"success": True, "user_id": user_id}), 201
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# -------------------------
+# /api/login -> login using email OR username and password
+# Accepts JSON or form data:
+# { identifier: <email_or_username> , password: "..." } OR { email, password } OR { username, password }
+# -------------------------
+@app.route('/api/login', methods=['POST'])
+def api_login():
+    try:
+        data = request.get_json() if request.is_json else request.form.to_dict()
+        identifier = data.get('identifier') or data.get('email') or data.get('username')
+        password = data.get('password')
+
+        if not identifier or not password:
+            return jsonify({"success": False, "error": "Identifier (email or username) and password required"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Try email first, then username
+        cur.execute("SELECT * FROM users WHERE email = ? COLLATE NOCASE", (identifier,))
+        row = cur.fetchone()
+        if row is None:
+            cur.execute("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (identifier,))
+            row = cur.fetchone()
+
+        if row is None:
+            conn.close()
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        user = row_to_dict(row)
+        conn.close()
+
+        if not check_password_hash(user['password_hash'], password):
+            return jsonify({"success": False, "error": "Invalid credentials"}), 401
+
+        # Build safe user object (no password_hash)
+        safe_user = {k: user[k] for k in user.keys() if k != 'password_hash'}
+        return jsonify({"success": True, "user": safe_user}), 200
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# -------------------------
+# /api/update-profile -> update user's full name / age
+# Accepts JSON or form data:
+# { user_id, full_name, age }
+# -------------------------
+@app.route('/api/update-profile', methods=['POST'])
+def api_update_profile():
+    try:
+        data = request.get_json() if request.is_json else request.form.to_dict()
+        user_id = data.get("user_id")
+        full_name = data.get("full_name")
+        age = data.get("age")
+
+        if not user_id:
+            return jsonify({"success": False, "error": "user_id is required"}), 400
+
+        # Validate inputs
+        if age is not None:
+            try:
+                age = int(age)
+            except ValueError:
+                return jsonify({"success": False, "error": "Age must be an integer"}), 400
+
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # Check if user exists
+        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+        row = cur.fetchone()
+        if not row:
+            conn.close()
+            return jsonify({"success": False, "error": "User not found"}), 404
+
+        # Perform the update
+        cur.execute(
+            "UPDATE users SET full_name = ?, age = ? WHERE id = ?",
+            (full_name, age, user_id)
+        )
+        conn.commit()
+
+        # Fetch updated user
+        cur.execute("SELECT id, username, email, full_name, age, created_at FROM users WHERE id = ?", (user_id,))
+        updated = cur.fetchone()
+        conn.close()
+
+        updated_user = {
+            "id": updated["id"],
+            "username": updated["username"],
+            "email": updated["email"],
+            "full_name": updated["full_name"],
+            "age": updated["age"],
+            "created_at": updated["created_at"]
+        }
+
+        return jsonify({"success": True, "user": updated_user}), 200
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# -------------------------
+# /api/history/<user_id> -> return all prediction records for the user
+# -------------------------
+@app.route('/api/history/<int:user_id>', methods=['GET'])
+def api_history(user_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        # -----------------------------
+        # AUTO-UPDATE TABLE SCHEMA HERE
+        # -----------------------------
+        required_columns = {
+            "age": "INTEGER",
+            "height": "REAL",
+            "weight": "REAL",
+            "gender": "TEXT",
+            "systolic_bp": "INTEGER",
+            "diastolic_bp": "INTEGER",
+            "cholesterol": "REAL",
+            "glucose": "REAL",
+            "smoking": "INTEGER",
+            "alcohol_intake": "INTEGER",
+            "physical_activity": "INTEGER",
+            "bmi": "REAL",
+            "probability": "REAL",
+            "risk_level": "TEXT",
+            "prediction_result": "TEXT",
+            "created_at": "TEXT"
+        }
+
+        # Get actual columns in predictions table
+        cur.execute("PRAGMA table_info(predictions);")
+        existing_cols = {row[1] for row in cur.fetchall()}
+
+        # Add missing columns automatically
+        for col_name, col_type in required_columns.items():
+            if col_name not in existing_cols:
+                print(f"[DB FIX] Adding missing column: {col_name} ({col_type})")
+                cur.execute(f"ALTER TABLE predictions ADD COLUMN {col_name} {col_type};")
+                conn.commit()
+
+        # -----------------------------
+        # MAIN QUERY
+        # -----------------------------
+        cur.execute(
+            "SELECT id, user_id, age, height, weight, gender, systolic_bp, diastolic_bp, cholesterol, glucose, "
+            "smoking, alcohol_intake, physical_activity, bmi, probability, risk_level, prediction_result, created_at "
+            "FROM predictions WHERE user_id = ? ORDER BY created_at DESC",
+            (user_id,)
+        )
+
+        rows = cur.fetchall()
+        conn.close()
+
+        history = []
+        for r in rows:
+            history.append({
+                "id": r["id"],
+                "user_id": r["user_id"],
+                "age": r["age"],
+                "height": r["height"],
+                "weight": r["weight"],
+                "gender": r["gender"],
+                "systolic_bp": r["systolic_bp"],
+                "diastolic_bp": r["diastolic_bp"],
+                "cholesterol": r["cholesterol"],
+                "glucose": r["glucose"],
+                "smoking": r["smoking"],
+                "alcohol_intake": r["alcohol_intake"],
+                "physical_activity": r["physical_activity"],
+                "bmi": r["bmi"],
+                "probability": r["probability"],
+                "risk_level": r["risk_level"],
+                "prediction_result": r["prediction_result"],
+                "created_at": r["created_at"]
+            })
+
+        return jsonify({"success": True, "historyData": history}), 200
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# -------------------------
+# /api/status/<user_id> -> returns latest status and trend (improving/worsening/stable)
+# -------------------------
+@app.route('/api/status/<int:user_id>', methods=['GET'])
+def api_status(user_id):
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        # Get last two predictions
+        cur.execute(
+            "SELECT probability, risk_level, created_at FROM predictions WHERE user_id = ? ORDER BY created_at DESC LIMIT 2",
+            (user_id,)
+        )
+        rows = cur.fetchall()
+        conn.close()
+
+        if not rows or len(rows) == 0:
+            return jsonify({"success": True, "status": "no_data", "message": "No prediction history found"}), 200
+
+        latest = rows[0]
+        latest_prob = latest['probability'] if latest['probability'] is not None else None
+        latest_risk = latest['risk_level'] if latest['risk_level'] is not None else None
+        latest_time = latest['created_at']
+
+        trend = "stable"
+        if len(rows) > 1:
+            prev = rows[1]
+            prev_prob = prev['probability'] if prev['probability'] is not None else None
+            if latest_prob is not None and prev_prob is not None:
+                # compare numeric probabilities
+                if latest_prob < prev_prob - 0.02:
+                    trend = "improving"
+                elif latest_prob > prev_prob + 0.02:
+                    trend = "worsening"
+                else:
+                    trend = "stable"
+
+        # Build a small payload with latest vitals
+        conn2 = get_db_connection()
+        cur2 = conn2.cursor()
+        cur2.execute(
+            "SELECT id, age, height, weight, gender, systolic_bp, diastolic_bp, cholesterol, glucose, bmi, probability, risk_level, created_at "
+            "FROM predictions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
+            (user_id,)
+        )
+        last_row = cur2.fetchone()
+        conn2.close()
+
+        latest_record = None
+        if last_row:
+            latest_record = {
+                "id": last_row["id"],
+                "age": last_row["age"],
+                "height": last_row["height"],
+                "weight": last_row["weight"],
+                "gender": last_row["gender"],
+                "systolic_bp": last_row["systolic_bp"],
+                "diastolic_bp": last_row["diastolic_bp"],
+                "cholesterol": last_row["cholesterol"],
+                "glucose": last_row["glucose"],
+                "bmi": last_row["bmi"],
+                "probability": last_row["probability"],
+                "risk_level": last_row["risk_level"],
+                "created_at": last_row["created_at"]
+            }
+
+        return jsonify({
+            "success": True,
+            "status": trend,
+            "latest": latest_record,
+            "latest_probability": latest_prob,
+            "latest_risk": latest_risk,
+            "latest_time": latest_time
+        }), 200
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# -------------------------
+# /api/chatbot -> uses Gemini if available; fallback to simple reply
+# Accepts JSON: { "message": "...", "userId": "..." }
+# -------------------------
+@app.route('/api/chatbot', methods=['POST'])
+def api_chatbot():
+    try:
+        data = request.get_json() if request.is_json else request.form.to_dict()
+        message = (data.get('message') or data.get('msg') or "").strip()
+        user_id = data.get('userId') or data.get('user_id')
+
+        if not message:
+            return jsonify({"success": False, "error": "Message is required"}), 400
+
+        # -------------------------
+        #   GEMINI CALL SECTION
+        # -------------------------
+        if GEMINI_AVAILABLE:
+            try:
+                print("⚡ Sending request to Gemini...")
+
+                model = genai.GenerativeModel("gemini-2.5-flash")
+
+                prompt = (
+                    f"You are a helpful, concise health assistant for HeartShield. "
+                    f"The user said: \"{message}\".\n"
+                    f"Respond with short, practical health advice focused on reducing vitals "
+                    f"(blood pressure, glucose, cholesterol). Provide 2–3 actionable tips. "
+                    f"Do NOT give medical diagnosis — only suggestions."
+                )
+
+                print(prompt)
+
+                # Send request to Gemini
+                resp = model.generate_content([prompt])
+
+                # Robust extraction of text
+                if hasattr(resp, "text") and resp.text:
+                    reply_text = resp.text.strip()
+                else:
+                    reply_text = str(resp).strip()
+
+                if not reply_text:
+                    raise ValueError("Empty response from Gemini")
+
+                print("✅ Gemini reply:", reply_text)
+                return jsonify({"success": True, "reply": reply_text, "model": "gemini-2.5-flash"}), 200
+
+            except Exception as e:
+                print("🔥 GEMINI FAILED:", e)
+                traceback.print_exc()
+                # fallback continues below
+
+        # -------------------------
+        #   FALLBACK REPLY
+        # -------------------------
+        fallback_reply = (
+            "Thanks — try deep breathing, stay hydrated, avoid stress, "
+            "and monitor your vitals. If BP or glucose stays high, seek medical help."
+        )
+        return jsonify({"success": True, "reply": fallback_reply, "model": "fallback"}), 200
+
+    except Exception as e:
+        print("❌ Chatbot route error:", e)
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+# ===== END: REACT-API ENDPOINTS =====
+
 if __name__ == '__main__':
     print("🚀 HeartShield ENHANCED Version with UPGRADED Gemini AI Running!")
     print("✅ NEW FEATURES: Age, Height, Weight, BP, Cholesterol, Glucose, Lifestyle")
@@ -1272,6 +1689,7 @@ if __name__ == '__main__':
     print(f"📍 Gemini AI Status: {'ENHANCED ACTIVE 🚀' if GEMINI_AVAILABLE else 'UNAVAILABLE'}")
     print("📍 OCR.space API: CONFIGURED")
     print("📍 OCR Routes: /ocr and /perform_ocr")
+    print("📍 React API Endpoints: /api/register, /api/login, /api/update-profile, /api/history, /api/status, /api/chatbot")
     print("📍 Visit: http://localhost:5000")
     print("📍 AI Medical Analysis: http://localhost:5000/ocr")
     app.run(debug=True, host='0.0.0.0', port=5000)
