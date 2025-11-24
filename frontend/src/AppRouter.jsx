@@ -6,28 +6,35 @@ import Register from "./pages/Register.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
 import History from "./pages/History.jsx";
 import Profile from "./pages/Profile.jsx";
-import Chatbot from "./pages/Chatbot.jsx";   // ✅ NEW IMPORT
+import Chatbot from "./pages/Chatbot.jsx";
+import Reviews from "./pages/Reviews";
 
 export default function AppRouter() {
   return (
-    <Routes>
-      {/* Default route */}
-      <Route path="/" element={<Navigate to="/login" />} />
+    <div className="router-container">
+      <Routes>
+        {/* Default route */}
+        <Route path="/" element={<Navigate to="/login" />} />
 
-      {/* Auth */}
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
+        {/* Auth */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
-      {/* App pages */}
-      <Route path="/dashboard" element={<Dashboard />} />
-      <Route path="/history" element={<History />} />
-      <Route path="/profile" element={<Profile />} />
+        {/* App pages */}
+        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/history" element={<History />} />
+        <Route path="/profile" element={<Profile />} />
 
-      {/* NEW: Chatbot */}
-      <Route path="/chatbot/:userId" element={<Chatbot />} />   {/* ✅ NEW ROUTE */}
+        {/* Chatbot - Added optional userId parameter and base route */}
+        <Route path="/chatbot" element={<Chatbot />} />
+        <Route path="/chatbot/:userId" element={<Chatbot />} />
 
-      {/* Catch-all */}
-      <Route path="*" element={<h1>404 - Not Found</h1>} />
-    </Routes>
+        {/* Reviews Page */}
+        <Route path="/reviews" element={<Reviews />} />
+
+        {/* Catch-all */}
+        <Route path="*" element={<div className="not-found-page">404 - Page Not Found</div>} />
+      </Routes>
+    </div>
   );
 }

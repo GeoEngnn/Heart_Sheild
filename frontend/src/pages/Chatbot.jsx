@@ -19,8 +19,8 @@ export default function Chatbot() {
   const chatEndRef = useRef(null);
 
   useEffect(() => {
-    // FIXED correct localStorage key
-    const stored = localStorage.getItem("user");
+    // FIXED: Use correct localStorage key
+    const stored = localStorage.getItem("heartshield_user");
     if (stored) {
       setUser(JSON.parse(stored));
     }
@@ -68,94 +68,46 @@ export default function Chatbot() {
   };
 
   return (
-    <div style={styles.container}>
+    <div className="chatbot-page">
       <Header />
-      <h2 style={styles.title}>Health Assistant Chat</h2>
+      <div className="app-container">
+        <h2 className="page-title">Health Assistant Chat</h2>
 
-      <div style={styles.chatBox}>
-        {messages.map((msg, index) => (
-          <div
-            key={index}
-            style={{
-              ...styles.bubble,
-              ...(msg.sender === "me" ? styles.me : styles.bot),
-            }}
-          >
-            {msg.text}
+        <div className="chat-container">
+          <div className="chat-box">
+            {messages.map((msg, index) => (
+              <div
+                key={index}
+                className={`message-bubble ${msg.sender === "me" ? "user-message" : "bot-message"}`}
+              >
+                {msg.text}
+              </div>
+            ))}
+
+            {loading && (
+              <div className="message-bubble bot-message typing-indicator">
+                Typing...
+              </div>
+            )}
+
+            <div ref={chatEndRef} />
           </div>
-        ))}
 
-        {loading && (
-          <div style={{ ...styles.bubble, ...styles.bot }}>Typing...</div>
-        )}
-
-        <div ref={chatEndRef} />
-      </div>
-
-      <div style={styles.inputRow}>
-        <input
-          type="text"
-          placeholder="Type your message..."
-          style={styles.input}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKey}
-        />
-        <button style={styles.sendBtn} onClick={handleSend}>
-          Send
-        </button>
+          <div className="chat-input-container">
+            <input
+              type="text"
+              placeholder="Type your message..."
+              className="chat-input"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKey}
+            />
+            <button className="send-button" onClick={handleSend}>
+              Send
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
-
-const styles = {
-  container: { padding: "20px", maxWidth: "900px", margin: "0 auto" },
-  title: { fontSize: "22px", fontWeight: "bold", marginBottom: "15px" },
-  chatBox: {
-    height: "60vh",
-    background: "#fff",
-    borderRadius: "10px",
-    padding: "15px",
-    overflowY: "auto",
-    boxShadow: "0 0 12px rgba(0,0,0,0.1)",
-  },
-  bubble: {
-    maxWidth: "80%",
-    padding: "10px",
-    marginBottom: "12px",
-    borderRadius: "10px",
-    fontSize: "15px",
-    lineHeight: "1.4",
-  },
-  me: {
-    background: "#4A4AE1",
-    color: "#fff",
-    marginLeft: "auto",
-  },
-  bot: {
-    background: "#f1f1f1",
-    color: "#333",
-    marginRight: "auto",
-  },
-  inputRow: {
-    display: "flex",
-    marginTop: "15px",
-    gap: "10px",
-  },
-  input: {
-    flex: 1,
-    padding: "12px",
-    borderRadius: "8px",
-    border: "1px solid #ccc",
-    fontSize: "15px",
-  },
-  sendBtn: {
-    padding: "12px 20px",
-    background: "#4A4AE1",
-    color: "#fff",
-    border: "none",
-    borderRadius: "8px",
-    cursor: "pointer",
-  },
-};

@@ -1,65 +1,251 @@
+/* ============================================================================
+   DASHBOARD PAGE LAYOUT
+   ============================================================================ */
 .dashboard-page {
-  padding: 20px;
-}
-
-.welcome {
-  font-size: 26px;
-  font-weight: bold;
-  margin-bottom: 20px;
-}
-
-.dashboard-cards {
+  width: 100%;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   display: flex;
-  gap: 15px;
-  margin-bottom: 25px;
-  flex-wrap: wrap;
+  flex-direction: column;
+  padding: 40px 20px;
 }
 
-.card {
+.welcome-title {
+  color: white;
+  text-align: center;
+  margin-bottom: 30px;
+  font-size: 2.5rem;
+  font-weight: 700;
+}
+
+/* ============================================================================
+   DASHBOARD CARDS GRID
+   ============================================================================ */
+.dashboard-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 25px;
+  margin-bottom: 30px;
+}
+
+/* ============================================================================
+   CARD BASE STYLING
+   ============================================================================ */
+.dashboard-card {
+  background: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  padding: 25px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  backdrop-filter: blur(10px);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.dashboard-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.2);
+}
+
+/* ============================================================================
+   CARD HEADER & TITLE
+   ============================================================================ */
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+/* EDIT THIS TO CHANGE CARD TITLE COLOR */
+.card-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #ec2752;  /* <-- CARD TITLE COLOR (e.g., "Status", "Latest Risk", "BMI") */
+  margin: 0;
+}
+
+/* ============================================================================
+   STATUS BADGE (small label in top-right of card)
+   ============================================================================ */
+/* EDIT THIS TO CHANGE STATUS BADGE COLOR */
+.status-badge {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  background: rgba(102, 126, 234, 0.1);
+  color: #667eea;  /* <-- STATUS BADGE COLOR (e.g., "improving", "stable", "worsening") */
+}
+
+.status-no-data {
+  background: rgba(108, 117, 125, 0.1);
+  color: #6c757d;
+}
+
+/* ============================================================================
+   METRIC CONTENT (labels, values, descriptions)
+   ============================================================================ */
+/* EDIT THIS TO CHANGE METRIC LABEL COLOR */
+.metric-label {
+  font-size: 0.9rem;
+  color: #666666;  /* <-- METRIC LABEL COLOR (e.g., "Body Mass Index", "Cardiovascular Risk") */
+  margin-bottom: 8px;
+}
+
+/* EDIT THIS TO CHANGE METRIC VALUE COLOR */
+.metric-value {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: #2c3e50;  /* <-- METRIC VALUE COLOR (the big numbers: 25.3, "High", "improving") */
+}
+
+.metric-value.na {
+  color: #bdc3c7;
+}
+
+/* EDIT THIS TO CHANGE DESCRIPTION TEXT COLOR */
+.prediction-title {
+  font-size: 0.9rem;
+  color: #777777;  /* <-- DESCRIPTION TEXT COLOR (e.g., "Based on your latest prediction", "Probability: 45.2%") */
+  margin-bottom: 8px;
+  opacity: 0.9;
+}
+
+/* ============================================================================
+   CARD TYPE VARIATIONS (Status, Risk, BMI backgrounds)
+   ============================================================================ */
+.status-card {
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+}
+
+.risk-card {
+  background: linear-gradient(135deg, rgba(231, 76, 60, 0.1), rgba(192, 57, 43, 0.1));
+}
+
+.bmi-card {
+  background: linear-gradient(135deg, rgba(46, 204, 113, 0.1), rgba(39, 174, 96, 0.1));
+}
+
+/* ============================================================================
+   CHART SECTION
+   ============================================================================ */
+.chart-section {
   background: white;
-  padding: 18px;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  flex: 1;
-  min-width: 200px;
+  border-radius: 16px;
+  padding: 25px;
+  margin-bottom: 30px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
 }
 
-.big-value {
-  font-size: 24px;
-  font-weight: bold;
-  margin-top: 8px;
-}
-
-.status-value {
-  font-size: 22px;
-  font-weight: bold;
+.chart-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: var(--text-dark);
 }
 
 .chart-container {
-  background: white;
-  padding: 15px;
-  border-radius: 10px;
-  margin-bottom: 25px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.chart-svg {
   width: 100%;
-  height: 150px;
-  background: #f9f9f9;
-  border-radius: 8px;
+  height: 300px;
+  background: #f8f9fa;
+  border-radius: 12px;
+  padding: 20px;
 }
 
+/* ============================================================================
+   ACTION BUTTONS
+   ============================================================================ */
 .quick-actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-top: 30px;
 }
 
-.quick-btn {
-  padding: 12px 20px;
-  background: #3498db;
-  color: white;
-  border-radius: 8px;
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--accent1);
   text-decoration: none;
+  border-radius: 12px;
+  font-weight: 600;
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.action-btn:hover {
+  background: white;
+  color: var(--accent2);
+  border-color: var(--accent1);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.3);
+}
+
+/* ============================================================================
+   PREDICTION SECTION
+   ============================================================================ */
+.prediction-section {
+  margin-bottom: 30px;
+}
+
+.prediction-section .dashboard-card {
+  background: rgba(255, 255, 255, 0.95);
+  color: var(--text-dark);
+}
+
+.probability {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #e74c3c;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .dashboard-cards {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+  
+  .dashboard-card {
+    padding: 20px;
+  }
+  
+  .metric-value {
+    font-size: 2rem;
+  }
+  
+  .welcome-title {
+    font-size: 2rem;
+  }
+  
+  .quick-actions {
+    grid-template-columns: 1fr;
+  }
+  
+  .chart-container {
+    height: 250px;
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard-page {
+    padding: 15px;
+  }
+  
+  .dashboard-card {
+    padding: 15px;
+  }
+  
+  .metric-value {
+    font-size: 1.8rem;
+  }
+  
+  .card-title {
+    font-size: 1.1rem;
+  }
 }

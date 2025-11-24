@@ -24,16 +24,18 @@ export default function VitalsChart({ history }) {
     .join(" ");
 
   return (
-    <div className="chart-container">
-      <h3>Probability Trend</h3>
-      <svg viewBox="0 0 100 100" className="chart-svg">
-        <polyline
-          fill="none"
-          stroke="#3498db"
-          strokeWidth="2"
-          points={points}
-        />
-      </svg>
+    <div className="chart-section">
+      <h3 className="chart-title">Probability Trend</h3>
+      <div className="chart-container">
+        <svg viewBox="0 0 100 100" className="chart-svg">
+          <polyline
+            fill="none"
+            stroke="#3498db"
+            strokeWidth="2"
+            points={points}
+          />
+        </svg>
+      </div>
     </div>
   );
 }

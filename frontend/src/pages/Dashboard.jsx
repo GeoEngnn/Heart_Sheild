@@ -1,47 +1,132 @@
 import React, { useEffect, useState } from "react";
-import Header from "../components/Header";
+import { Link } from "react-router-dom";
+import { getUserStatus, getUserHistory } from "../services/api";
 import DashboardCards from "../components/DashboardCards";
 import VitalsChart from "../components/VitalsChart";
-import { getUserStatus, getUserHistory } from "../services/api";
-
+import bgImage from "../assets/app.png"
 export default function Dashboard() {
   const user = JSON.parse(localStorage.getItem("heartshield_user"));
   const userId = user?.id;
 
-  const [statusData, setStatusData] = useState(null);
+  const [status, setStatus] = useState(null);
   const [historyData, setHistoryData] = useState([]);
 
   useEffect(() => {
     if (!userId) return;
 
-    getUserStatus(userId).then((res) => {
-      if (res.success) setStatusData(res);
-    });
+    async function loadStatus() {
+      const res = await getUserStatus(userId);
+      setStatus(res);
+    }
 
-    getUserHistory(userId).then((res) => {
+    async function loadHistory() {
+      const res = await getUserHistory(userId);
       if (res.success) setHistoryData(res.historyData);
-    });
+    }
+
+    loadStatus();
+    loadHistory();
   }, [userId]);
 
+  const handleLogout = () => {
+    localStorage.removeItem("heartshield_user");
+    window.location.href = "/login";
+  };
+
   return (
-    <div className="dashboard-page">
-      <Header />
+    <div className="dashboard-page"  style={{
+    backgroundImage: `url(${bgImage})`,
+    backgroundSize: 'cover',
+    backgroundRepeat: 'no-repeat',
+    backgroundPosition: 'center',
+    width: '100%',
+    height: '100vh'
+  }}>
+      <div className="navbar">
+        <h2>HeartShield</h2>
+        <div className="nav-links">
+           <a href="http://localhost:5000/">Scan & Predict</a>
+          <Link to="/history">History</Link>
+          <Link to="/profile">Profile</Link>
+          <Link to="/chatbot">Chat</Link>
+          <button 
+            className="btn-cta logout-btn" 
+            onClick={handleLogout}
+          >
+            Logout
+          </button>
+        </div>
+      </div>
 
-      <h2 className="welcome">Welcome Back, {user?.username}</h2>
+      <div className="app-container">
+        <h1 className="welcome-title">Welcome Back, {user?.username}</h1>
 
-      {statusData && (
-        <DashboardCards
-          status={statusData.status}
-          latest={statusData.latest}
-        />
-      )}
+        <div className="dashboard-cards">
+          <div className="dashboard-card status-card">
+            <div className="card-header">
+              <h3 className="card-title">Status</h3>
+              <span className={`status-badge ${!status?.status ? 'status-no-data' : ''}`}>
+                {status?.status || "no_data"}
+              </span>
+            </div>
+            <div className="card-content">
+              <div className="metric-value">
+                {status?.status || "N/A"}
+              </div>
+            </div>
+          </div>
 
-      <VitalsChart history={historyData.slice(0, 10).reverse()} />
+          <div className="dashboard-card risk-card">
+            <div className="card-header">
+              <h3 className="card-title">Latest Risk</h3>
+            </div>
+            <div className="card-content">
+              <div className="metric-label">Cardiovascular Risk</div>
+              <div className="metric-value">
+                {status?.latest_risk || "N/A"}
+              </div>
+            </div>
+          </div>
 
-      <div className="quick-actions">
-        <a href={`/history/${userId}`} className="quick-btn">📜 View History</a>
-        <a href="/profile" className="quick-btn">👤 Profile</a>
-        <a href={`/chatbot/${userId}`} className="quick-btn">🤖 Chat with AI</a>
+          <div className="dashboard-card bmi-card">
+            <div className="card-header">
+              <h3 className="card-title">BMI</h3>
+            </div>
+            <div className="card-content">
+              <div className="metric-label">Body Mass Index</div>
+              <div className="metric-value">
+                {status?.latest?.bmi ? status.latest.bmi.toFixed(1) : "N/A"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Prediction Section */}
+        <div className="prediction-section">
+          <div className="dashboard-card">
+            <div className="card-header">
+              <h3 className="card-title">Heart Disease Prediction</h3>
+            </div>
+            <div className="card-content">
+              <div className="prediction-title">Based on your latest prediction</div>
+              <div className="probability">
+                Probability: {status?.probability ? `${status.probability}%` : "N/A%"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+        <div className="chart-section">
+          <VitalsChart history={historyData.slice(0, 10).reverse()} />
+        </div>
+
+        <div className="quick-actions">
+          <Link className="btn-cta action-btn" to="/history">View History</Link>
+          <Link className="btn-cta action-btn" to="/profile">Profile</Link>
+          <Link className="btn-cta action-btn" to="/chatbot">Chat with AI</Link>
+          <Link className="btn-cta action-btn" to="/reviews">Reviews</Link>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,4 @@
 import React from "react";
-import "./Dashboard.css";
 
 export default function DashboardCards({ status, latest }) {
   // Safe color mapping including no_data
@@ -10,12 +9,13 @@ export default function DashboardCards({ status, latest }) {
       ? "#e74c3c"
       : status === "stable"
       ? "#f1c40f"
-      : "#7f8c8d"; // no_data or unknown
+      : "#529ea3ff"; // no_data or unknown
 
   // Safe probability formatting
-  const probability = latest?.probability != null
-    ? (latest.probability * 100).toFixed(1)
-    : "N/A";
+  const probability =
+    latest?.probability != null
+      ? (latest.probability * 100).toFixed(1)
+      : "N/A";
 
   // Safe BMI formatting
   const bmiValue =
@@ -34,28 +34,44 @@ export default function DashboardCards({ status, latest }) {
     <div className="dashboard-cards">
       {/* STATUS CARD */}
       <div
-        className="card status-card"
+        className="dashboard-card status-card"
         style={{ borderLeft: `6px solid ${riskColor}` }}
       >
-        <h3>Status</h3>
-        <p className="status-value">{status || "No Data"}</p>
-        <small>Based on your latest prediction</small>
+        <div className="card-header">
+          <h3 className="card-title">Status</h3>
+          <span className={`status-badge ${!status ? "status-No data" : ""}`}>
+            {status || "No data"}
+          </span>
+        </div>
+        <div className="card-content">
+          <div className="metric-value">{status || "N/A"}</div>
+          <div className="prediction-title">Based on your latest prediction</div>
+        </div>
       </div>
 
       {/* LATEST RISK */}
-      <div className="card">
-        <h3>Latest Risk</h3>
-        <p className="big-value">{latest?.risk_level || "N/A"}</p>
-        <small>Probability: {probability}%</small>
+      <div className="dashboard-card risk-card">
+        <div className="card-header">
+          <h3 className="card-title">Latest Risk</h3>
+        </div>
+        <div className="card-content">
+          <div className="metric-label">Cardiovascular Risk</div>
+          <div className="metric-value">{latest?.risk_level || "N/A"}</div>
+          <div className="prediction-title">Probability: {probability}%</div>
+        </div>
       </div>
 
       {/* BMI */}
-      <div className="card">
-        <h3>BMI</h3>
-        <p className="big-value">{bmiValue}</p>
-        <small>{bmiStatus}</small>
+      <div className="dashboard-card bmi-card">
+        <div className="card-header">
+          <h3 className="card-title">BMI</h3>
+        </div>
+        <div className="card-content">
+          <div className="metric-label">Body Mass Index</div>
+          <div className="metric-value">{bmiValue}</div>
+          <div className="prediction-title">{bmiStatus}</div>
+        </div>
       </div>
     </div>
   );
 }
-

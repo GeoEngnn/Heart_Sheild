@@ -18,66 +18,39 @@ export default function Header() {
   }
 
   return (
-    <div
-      style={{
-        width: "100%",
-        padding: "12px 20px",
-        background: "#111",
-        color: "white",
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: "20px",
-      }}
-    >
+    <div className="navbar">
       {/* Left side - logo */}
-      <div
-        style={{
-          fontSize: "20px",
-          fontWeight: "bold",
-          cursor: "pointer",
-        }}
+      <div 
+        className="logo"
         onClick={() => navigate("/dashboard")}
       >
         HeartShield
       </div>
 
       {/* Right side */}
-      <div style={{ display: "flex", gap: "20px", alignItems: "center" }}>
+      <div className="nav-links">
         {user ? (
           <>
-            <a
-              style={styles.link}
-              href="http://localhost:5000/"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              HeartShield
-            </a>
-            <Link style={styles.link} to="/history">
+            <a href="http://localhost:5000/" style={{color:"white"}}>Scan & Predict</a>
+            <Link className="nav-link" to="/history">
               History
             </Link>
-
-            <Link style={styles.link} to="/profile">
+            <Link className="nav-link" to="/profile">
               Profile
             </Link>
-
-            {/* NEW: Correct chat route */}
-            <Link style={styles.link} to="/chatbot/:userId">
+            <Link className="nav-link" to="/chatbot">
               Chat
             </Link>
-
-            <button style={styles.logout} onClick={logout}>
+            <button className="logout-btn" onClick={logout}>
               Logout
             </button>
           </>
         ) : (
           <>
-            <Link style={styles.link} to="/login">
+            <Link className="nav-link" to="/login">
               Login
             </Link>
-
-            <Link style={styles.link} to="/register">
+            <Link className="nav-link" to="/register">
               Register
             </Link>
           </>
@@ -86,19 +59,3 @@ export default function Header() {
     </div>
   );
 }
-
-const styles = {
-  link: {
-    color: "white",
-    textDecoration: "none",
-    fontSize: "15px",
-  },
-  logout: {
-    padding: "6px 12px",
-    background: "red",
-    color: "white",
-    border: "none",
-    borderRadius: "4px",
-    cursor: "pointer",
-  },
-};

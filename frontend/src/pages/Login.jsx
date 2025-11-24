@@ -15,6 +15,7 @@ export default function Login() {
     setLoading(true);
 
     try {
+      console.log('=== LOGIN DEBUG START ===');
       console.log('Sending login request to backend...');
       
       const response = await login({
@@ -22,13 +23,47 @@ export default function Login() {
         password,
       });
 
-      console.log('Raw response:', response);
+      console.log('=== RAW API RESPONSE ===');
+      console.log('Full response:', response);
+      console.log('Response keys:', Object.keys(response));
       
       if (response.success) {
-        console.log('Login successful, user:', response.user);
+        console.log('=== SUCCESSFUL LOGIN DATA ===');
+        console.log('Response success:', response.success);
+        console.log('User object:', response.user);
+        console.log('User object type:', typeof response.user);
+        
+        if (response.user) {
+          console.log('User object keys:', Object.keys(response.user));
+          console.log('User ID:', response.user.id);
+          console.log('Username:', response.user.username);
+          console.log('Email:', response.user.email);
+        } else {
+          console.log('NO USER OBJECT IN RESPONSE!');
+          console.log('Available keys in response:', Object.keys(response));
+        }
+        
+        // Save to localStorage
         localStorage.setItem("heartshield_user", JSON.stringify(response.user));
+        
+        // Verify it was saved correctly
+        const saved = localStorage.getItem("heartshield_user");
+        console.log('=== LOCALSTORAGE VERIFICATION ===');
+        console.log('Saved raw string:', saved);
+        
+        if (saved) {
+          const parsedSaved = JSON.parse(saved);
+          console.log('Parsed saved data:', parsedSaved);
+          console.log('Parsed data keys:', Object.keys(parsedSaved));
+          console.log('Parsed ID:', parsedSaved.id);
+          console.log('Parsed username:', parsedSaved.username);
+          console.log('Parsed email:', parsedSaved.email);
+        }
+        
+        console.log('=== LOGIN DEBUG END ===');
         navigate("/dashboard");
       } else {
+        console.log('Login failed:', response.error);
         setError(response.error || "Login failed");
       }
     } catch (err) {
@@ -39,64 +74,50 @@ export default function Login() {
     setLoading(false);
   };
 
-  // Add this function to test backend connection
-  const testBackendConnection = async () => {
-    console.log('Testing backend connection...');
-    try {
-      const response = await fetch('http://127.0.0.1:5000');
-      console.log('Backend connection test:', response.status, response.statusText);
-      alert(`Backend connection: ${response.status} ${response.statusText}`);
-    } catch (error) {
-      console.error('Backend connection failed:', error);
-      alert('Backend connection FAILED - check if server is running');
-    }
-  };
-
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <h2 style={styles.title}>Sign In</h2>
+    <div className="center-page">
+      <div className="auth-card">
+        <h2 className="auth-title">Sign In</h2>
 
-        {error && <div style={styles.errorBox}>{error}</div>}
+        {error && <div className="error-message">{error}</div>}
 
-        <form onSubmit={handleLogin}>
-          <label style={styles.label}>Email or Username</label>
-          <input
-            type="text"
-            placeholder="example@gmail.com or username"
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-            required
-            style={styles.input}
-          />
+        <form onSubmit={handleLogin} className="auth-form">
+          <div className="form-group">
+            <label className="form-label">Email or Username</label>
+            <input
+              type="text"
+              placeholder="example@gmail.com or username"
+              value={identifier}
+              onChange={(e) => setIdentifier(e.target.value)}
+              required
+              className="form-input"
+            />
+          </div>
 
-          <label style={styles.label}>Password</label>
-          <input
-            type="password"
-            placeholder="••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={styles.input}
-          />
+          <div className="form-group">
+            <label className="form-label">Password</label>
+            <input
+              type="password"
+              placeholder="••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="form-input"
+            />
+          </div>
 
-          <button type="submit" style={styles.button} disabled={loading}>
+          <button 
+            type="submit" 
+            className="auth-button" 
+            disabled={loading}
+          >
             {loading ? "Logging in..." : "Login"}
           </button>
         </form>
 
-        {/* Temporary test button - add this */}
-        <button 
-          type="button" 
-          onClick={testBackendConnection}
-          style={{...styles.button, background: '#666', marginTop: '10px'}}
-        >
-          Test Backend Connection
-        </button>
-
-        <p style={styles.switchText}>
+        <p className="auth-switch-text">
           Don't have an account?{" "}
-          <span style={styles.link} onClick={() => navigate("/register")}>
+          <span className="auth-link" onClick={() => navigate("/register")}>
             Register
           </span>
         </p>
@@ -104,67 +125,3 @@ export default function Login() {
     </div>
   );
 }
-
-// Minimal inline styles
-const styles = {
-  container: {
-    display: "flex",
-    justifyContent: "center",
-    padding: "40px",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "420px",
-    background: "#fff",
-    padding: "25px",
-    borderRadius: "12px",
-    boxShadow: "0 0 18px rgba(0,0,0,0.1)",
-  },
-  title: {
-    textAlign: "center",
-    marginBottom: "20px",
-    fontSize: "24px",
-    fontWeight: "bold",
-  },
-  label: {
-    fontWeight: "bold",
-    marginTop: "12px",
-  },
-  input: {
-    width: "100%",
-    padding: "10px",
-    marginTop: "5px",
-    borderRadius: "6px",
-    border: "1px solid #ccc",
-    fontSize: "16px",
-  },
-  button: {
-    width: "100%",
-    marginTop: "20px",
-    padding: "12px",
-    background: "#4A4AE1",
-    fontSize: "16px",
-    color: "#fff",
-    border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-  },
-  switchText: {
-    marginTop: "15px",
-    textAlign: "center",
-    fontSize: "14px",
-  },
-  link: {
-    color: "#4A4AE1",
-    cursor: "pointer",
-    fontWeight: "bold",
-  },
-  errorBox: {
-    background: "#ffb3b3",
-    padding: "10px",
-    borderRadius: "6px",
-    marginBottom: "15px",
-    color: "#900",
-    fontSize: "14px",
-  },
-};

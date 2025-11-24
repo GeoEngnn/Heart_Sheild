@@ -4,91 +4,124 @@ import { useNavigate } from "react-router-dom";
 
 export default function Profile() {
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    const stored = localStorage.getItem("heartshield_user");
-    if (!stored) {
-      navigate("/login");
-      return;
-    }
-    setUser(JSON.parse(stored));
+    const loadUserData = () => {
+      console.log('=== PROFILE DEBUG START ===');
+      
+      const stored = localStorage.getItem("heartshield_user");
+      console.log('Raw heartshield_user from localStorage:', stored);
+      
+      if (!stored) {
+        console.log('No user data found in localStorage');
+        navigate("/login");
+        return;
+      }
+
+      try {
+        const userData = JSON.parse(stored);
+        console.log('Parsed user data in Profile:', userData);
+        
+        // Format user data with fallbacks
+        const formattedUser = {
+          id: userData.id || userData.user_id || "N/A",
+          username: userData.username || "N/A",
+          email: userData.email || "N/A",
+          joined: userData.created_at || userData.joined_date || formatCurrentDate()
+        };
+        
+        console.log('Formatted user data:', formattedUser);
+        setUser(formattedUser);
+      } catch (error) {
+        console.error('Error parsing user data in Profile:', error);
+        navigate("/login");
+      } finally {
+        setLoading(false);
+      }
+      
+      console.log('=== PROFILE DEBUG END ===');
+    };
+
+    loadUserData();
   }, [navigate]);
+
+  // Helper function to format current date as fallback
+  const formatCurrentDate = () => {
+    return new Date().toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("heartshield_user");
     navigate("/login");
   };
 
-  if (!user) return <p style={styles.loading}>Loading...</p>;
+  if (loading) {
+    return (
+      <div className="profile-page">
+        <Header />
+        <div className="loading-container">Loading profile...</div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="profile-page">
+        <Header />
+        <div className="error-container">
+          <p>Unable to load user data. Please log in again.</p>
+          <button onClick={() => navigate("/login")} className="auth-button">
+            Go to Login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={styles.container}>
+    <div className="profile-page">
       <Header />
+      <div className="app-container">
+        <h2 className="page-title">My Profile</h2>
 
-      <h2 style={styles.title}>My Profile</h2>
+        <div className="profile-card">
+          <div className="profile-info">
+            {/* User ID Field */}
+            <div className="info-row">
+              <strong>User ID:</strong> 
+              <span className="field-data">{user.id}</span>
+            </div>
 
-      <div style={styles.card}>
-        <div style={styles.row}>
-          <strong>User ID:</strong> {user.id}
-        </div>
+            {/* Username Field */}
+            <div className="info-row">
+              <strong>Username:</strong> 
+              <span className="field-data">{user.username}</span>
+            </div>
 
-        <div style={styles.row}>
-          <strong>Username:</strong> {user.username}
-        </div>
+            {/* Email Field */}
+            <div className="info-row">
+              <strong>Email:</strong> 
+              <span className="field-data">{user.email}</span>
+            </div>
 
-        <div style={styles.row}>
-          <strong>Email:</strong> {user.email}
-        </div>
-
-        {user.created_at && (
-          <div style={styles.row}>
-            <strong>Joined:</strong> {user.created_at}
+            {/* Joined Date Field */}
+            <div className="info-row">
+              <strong>Joined:</strong> 
+              <span className="field-data">{user.joined}</span>
+            </div>
           </div>
-        )}
 
-        <button style={styles.logoutBtn} onClick={handleLogout}>
-          Logout
-        </button>
+          <button className="logout-button" onClick={handleLogout}>
+            Logout
+          </button>
+        </div>
       </div>
     </div>
   );
 }
-
-const styles = {
-  container: {
-    padding: "20px",
-    maxWidth: "700px",
-    margin: "0 auto",
-  },
-  loading: {
-    textAlign: "center",
-    marginTop: "40px",
-  },
-  title: {
-    fontSize: "22px",
-    fontWeight: "bold",
-    marginBottom: "20px",
-  },
-  card: {
-    background: "#fff",
-    padding: "20px",
-    borderRadius: "12px",
-    boxShadow: "0 0 12px rgba(0,0,0,0.1)",
-  },
-  row: {
-    marginBottom: "12px",
-    fontSize: "15px",
-  },
-  logoutBtn: {
-    marginTop: "20px",
-    width: "100%",
-    padding: "12px",
-    background: "#E74C3C",
-    color: "#fff",
-    border: "none",
-    borderRadius: "8px",
-    fontSize: "16px",
-    cursor: "pointer",
-  },
-};

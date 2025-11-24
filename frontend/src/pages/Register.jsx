@@ -37,51 +37,61 @@ export default function Register() {
   };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <h2 style={styles.title}>Create Account</h2>
+    <div className="center-page">
+      <div className="auth-card">
+        <h2 className="auth-title">Create Account</h2>
 
-        {error && <div style={styles.errorBox}>{error}</div>}
+        {error && <div className="error-message">{error}</div>}
 
-        <form onSubmit={handleRegister}>
-          <label style={styles.label}>Username</label>
-          <input
-            type="text"
-            placeholder="Choose a username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            required
-            style={styles.input}
-          />
+        <form onSubmit={handleRegister} className="auth-form">
+          <div className="form-group">
+            <label className="form-label">Username</label>
+            <input
+              type="text"
+              placeholder="Choose a username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              required
+              className="form-input"
+            />
+          </div>
 
-          <label style={styles.label}>Email</label>
-          <input
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            style={styles.input}
-          />
+          <div className="form-group">
+            <label className="form-label">Email</label>
+            <input
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="form-input"
+            />
+          </div>
 
-          <label style={styles.label}>Password</label>
-          <input
-            type="password"
-            placeholder="••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={styles.input}
-          />
+          <div className="form-group">
+            <label className="form-label">Password</label>
+            <input
+              type="password"
+              placeholder="••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="form-input"
+            />
+          </div>
 
-          <button type="submit" style={styles.button} disabled={loading}>
-            {loading ? "Registering..." : "Register"}
+          <button 
+            type="submit" 
+            className="auth-button" 
+            disabled={loading}
+          >
+            {loading ? "Registering..." : "Create Account"}
           </button>
         </form>
 
-        <p style={styles.switchText}>
+        <p className="auth-switch-text">
           Already have an account?{" "}
-          <span style={styles.link} onClick={() => navigate("/login")}>
+          <span className="auth-link" onClick={() => navigate("/login")}>
             Login
           </span>
         </p>
@@ -89,66 +99,3 @@ export default function Register() {
     </div>
   );
 }
-
-const styles = {
-  container: {
-    display: "flex",
-    justifyContent: "center",
-    padding: "40px",
-  },
-  card: {
-    width: "100%",
-    maxWidth: "420px",
-    background: "#fff",
-    padding: "25px",
-    borderRadius: "12px",
-    boxShadow: "0 0 18px rgba(0,0,0,0.1)",
-  },
-  title: {
-    textAlign: "center",
-    marginBottom: "20px",
-    fontSize: "24px",
-    fontWeight: "bold",
-  },
-  label: {
-    fontWeight: "bold",
-    marginTop: "12px",
-  },
-  input: {
-    width: "100%",
-    padding: "10px",
-    marginTop: "5px",
-    borderRadius: "6px",
-    border: "1px solid #ccc",
-    fontSize: "16px",
-  },
-  button: {
-    width: "100%",
-    marginTop: "20px",
-    padding: "12px",
-    background: "#4A4AE1",
-    fontSize: "16px",
-    color: "#fff",
-    border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-  },
-  switchText: {
-    marginTop: "15px",
-    textAlign: "center",
-    fontSize: "14px",
-  },
-  link: {
-    color: "#4A4AE1",
-    cursor: "pointer",
-    fontWeight: "bold",
-  },
-  errorBox: {
-    background: "#ffb3b3",
-    padding: "10px",
-    borderRadius: "6px",
-    marginBottom: "15px",
-    color: "#900",
-    fontSize: "14px",
-  },
-};

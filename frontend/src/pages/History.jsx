@@ -34,105 +34,78 @@ export default function History() {
     })();
   }, [userId]);
 
-  if (loading) return <p style={styles.loading}>Loading history…</p>;
-  if (error) return <p style={styles.error}>{error}</p>;
+  if (loading) return <div className="loading-container">Loading history…</div>;
+  if (error) return <div className="error-container">{error}</div>;
 
   return (
-    <div style={styles.container}>
+    <div className="history-page">
       <Header />
-      <h2 style={styles.title}>Prediction History</h2>
+      <div className="app-container">
+        <h2 className="page-title">Prediction History</h2>
 
-      {history.length === 0 ? (
-        <p>No previous predictions found.</p>
-      ) : (
-        <div style={styles.list}>
-          {history.map((item) => (
-            <div key={item.id} style={styles.card}>
-              <div style={styles.row}>
-                <strong>Date: </strong> {item.created_at}
+        {history.length === 0 ? (
+          <div className="empty-state">
+            No previous predictions found.
+          </div>
+        ) : (
+          <div className="history-list">
+            {history.map((item) => (
+              <div key={item.id} className="history-card">
+                <div className="history-date">
+                  <strong>Date: </strong> {item.created_at}
+                </div>
+
+                <div className="history-grid">
+                  <div className="history-item">
+                    <span className="item-label">Age:</span>
+                    <span className="item-value">{item.age}</span>
+                  </div>
+                  <div className="history-item">
+                    <span className="item-label">Gender:</span>
+                    <span className="item-value">{item.gender}</span>
+                  </div>
+                  <div className="history-item">
+                    <span className="item-label">Height:</span>
+                    <span className="item-value">{item.height} cm</span>
+                  </div>
+                  <div className="history-item">
+                    <span className="item-label">Weight:</span>
+                    <span className="item-value">{item.weight} kg</span>
+                  </div>
+                  <div className="history-item">
+                    <span className="item-label">BMI:</span>
+                    <span className="item-value">{item.bmi}</span>
+                  </div>
+
+                  <div className="history-item">
+                    <span className="item-label">Blood Pressure:</span>
+                    <span className="item-value">{item.systolic_bp}/{item.diastolic_bp}</span>
+                  </div>
+
+                  <div className="history-item">
+                    <span className="item-label">Cholesterol:</span>
+                    <span className="item-value">{item.cholesterol}</span>
+                  </div>
+                  <div className="history-item">
+                    <span className="item-label">Glucose:</span>
+                    <span className="item-value">{item.glucose}</span>
+                  </div>
+
+                  <div className={`history-item risk-item risk-${item.risk_level?.toLowerCase()}`}>
+                    <span className="item-label">Risk Level:</span>
+                    <span className="item-value">{item.risk_level}</span>
+                  </div>
+
+                  <div className="history-item probability-item">
+                    <span className="item-label">Probability:</span>
+                    <span className="item-value">{(item.probability * 100).toFixed(1)}%</span>
+                  </div>
+                </div>
               </div>
-
-              <div style={styles.grid}>
-                <div style={styles.item}>Age: {item.age}</div>
-                <div style={styles.item}>Gender: {item.gender}</div>
-                <div style={styles.item}>Height: {item.height} cm</div>
-                <div style={styles.item}>Weight: {item.weight} kg</div>
-                <div style={styles.item}>BMI: {item.bmi}</div>
-
-                <div style={styles.item}>
-                  BP: {item.systolic_bp}/{item.diastolic_bp}
-                </div>
-
-                <div style={styles.item}>Cholesterol: {item.cholesterol}</div>
-                <div style={styles.item}>Glucose: {item.glucose}</div>
-
-                <div style={{ ...styles.item, color: getRiskColor(item.risk_level), fontWeight: "bold" }}>
-                  Risk: {item.risk_level}
-                </div>
-
-                <div style={styles.item}>
-                  Probability: {(item.probability * 100).toFixed(1)}%
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
-function getRiskColor(level) {
-  if (level === "High") return "#e74c3c";
-  if (level === "Moderate") return "#f1c40f";
-  if (level === "Low") return "#2ecc71";
-  return "#333";
-}
-
-const styles = {
-  container: {
-    padding: "20px",
-    maxWidth: "900px",
-    margin: "0 auto",
-  },
-  loading: {
-    textAlign: "center",
-    marginTop: "30px",
-    fontSize: "16px",
-  },
-  error: {
-    color: "red",
-    textAlign: "center",
-    marginTop: "30px",
-  },
-  title: {
-    fontSize: "24px",
-    fontWeight: "bold",
-    marginBottom: "20px",
-  },
-  list: {
-    marginTop: "15px",
-  },
-  card: {
-    background: "#fff",
-    padding: "15px",
-    borderRadius: "10px",
-    boxShadow: "0 0 10px rgba(0,0,0,0.1)",
-    marginBottom: "15px",
-  },
-  row: {
-    marginBottom: "12px",
-    fontSize: "15px",
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-    gap: "10px",
-  },
-  item: {
-    background: "#f7f7f7",
-    padding: "10px",
-    borderRadius: "8px",
-    border: "1px solid #ddd",
-  },
-};
