@@ -6,14 +6,25 @@ export default function Header() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    const stored = localStorage.getItem("heartshield_user");
-    if (stored) {
-      setUser(JSON.parse(stored));
-    }
+    const initializeUser = () => {
+      const stored = localStorage.getItem("heartshield_user");
+      if (stored) {
+        try {
+          const userData = JSON.parse(stored);
+          setUser(userData);
+        } catch (error) {
+          console.error("Error parsing user data:", error);
+          localStorage.removeItem("heartshield_user");
+        }
+      }
+    };
+
+    initializeUser();
   }, []);
 
   function logout() {
     localStorage.removeItem("heartshield_user");
+    setUser(null); // Clear user state
     navigate("/login");
   }
 
@@ -23,6 +34,7 @@ export default function Header() {
       <div 
         className="logo"
         onClick={() => navigate("/dashboard")}
+        style={{ cursor: "pointer" }}
       >
         HeartShield
       </div>
@@ -31,6 +43,11 @@ export default function Header() {
       <div className="nav-links">
         {user ? (
           <>
+            {/* ADDED USER GREETING WITH FULL NAME */}
+            <div className="user-greeting">
+              Hello, {user.full_name || user.username}!
+            </div>
+            
             <a href="http://localhost:5000/" style={{color:"white"}}>Scan & Predict</a>
             <Link className="nav-link" to="/history">
               History

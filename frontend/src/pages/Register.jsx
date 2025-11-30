@@ -3,6 +3,7 @@ import { register } from "../services/api";
 import { useNavigate } from "react-router-dom";
 
 export default function Register() {
+  const [fullName, setFullName] = useState("");
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,6 +19,7 @@ export default function Register() {
 
     try {
       const response = await register({
+        full_name: fullName,
         username,
         email,
         password,
@@ -44,6 +46,19 @@ export default function Register() {
         {error && <div className="error-message">{error}</div>}
 
         <form onSubmit={handleRegister} className="auth-form">
+          {/* ADDED FULL NAME FIELD */}
+          <div className="form-group">
+            <label className="form-label">Full Name</label>
+            <input
+              type="text"
+              placeholder="Enter your full name"
+              value={fullName}
+              onChange={(e) => setFullName(e.target.value)}
+              required
+              className="form-input"
+            />
+          </div>
+
           <div className="form-group">
             <label className="form-label">Username</label>
             <input

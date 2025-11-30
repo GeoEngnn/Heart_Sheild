@@ -4,6 +4,7 @@ import { getUserStatus, getUserHistory } from "../services/api";
 import DashboardCards from "../components/DashboardCards";
 import VitalsChart from "../components/VitalsChart";
 import bgImage from "../assets/app.png"
+
 export default function Dashboard() {
   const user = JSON.parse(localStorage.getItem("heartshield_user"));
   const userId = user?.id;
@@ -11,21 +12,40 @@ export default function Dashboard() {
   const [status, setStatus] = useState(null);
   const [historyData, setHistoryData] = useState([]);
 
+  // Function to refresh data from backend
+  const refreshData = async () => {
+    if (!userId) return;
+    try {
+      const statusRes = await getUserStatus(userId);
+      setStatus(statusRes);
+      
+      const historyRes = await getUserHistory(userId);
+      if (historyRes.success) setHistoryData(historyRes.historyData);
+      
+      console.log("✅ Dashboard data refreshed at", new Date().toLocaleTimeString());
+    } catch (error) {
+      console.error("Error refreshing data:", error);
+    }
+  };
+
+  // Initial load
+  useEffect(() => {
+    if (userId) {
+      refreshData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  // Auto-refresh every 2 seconds to catch new predictions immediately
   useEffect(() => {
     if (!userId) return;
 
-    async function loadStatus() {
-      const res = await getUserStatus(userId);
-      setStatus(res);
-    }
+    const interval = setInterval(() => {
+      refreshData();
+    }, 2000);
 
-    async function loadHistory() {
-      const res = await getUserHistory(userId);
-      if (res.success) setHistoryData(res.historyData);
-    }
-
-    loadStatus();
-    loadHistory();
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
   const handleLogout = () => {
@@ -66,12 +86,12 @@ export default function Dashboard() {
             <div className="card-header">
               <h3 className="card-title">Status</h3>
               <span className={`status-badge ${!status?.status ? 'status-no-data' : ''}`}>
-                {status?.status || "no_data"}
+                {status?.status ? status.status.charAt(0).toUpperCase() + status.status.slice(1) : "No Data"}
               </span>
             </div>
             <div className="card-content">
               <div className="metric-value">
-                {status?.status || "N/A"}
+                {status?.status ? status.status.charAt(0).toUpperCase() + status.status.slice(1) : "N/A"}
               </div>
             </div>
           </div>
@@ -100,22 +120,6 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-
-        {/* Prediction Section */}
-        <div className="prediction-section">
-          <div className="dashboard-card">
-            <div className="card-header">
-              <h3 className="card-title">Heart Disease Prediction</h3>
-            </div>
-            <div className="card-content">
-              <div className="prediction-title">Based on your latest prediction</div>
-              <div className="probability">
-                Probability: {status?.probability ? `${status.probability}%` : "N/A%"}
-              </div>
-            </div>
-          </div>
-        </div>
-
 
         <div className="chart-section">
           <VitalsChart history={historyData.slice(0, 10).reverse()} />

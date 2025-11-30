@@ -112,3 +112,13 @@ export async function updateProfile(userId, data) {
   });
   return res.json();
 }
+
+// Prediction API
+export async function makePrediction(data) {
+  const res = await fetch(`${BASE_URL}/api/predict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}

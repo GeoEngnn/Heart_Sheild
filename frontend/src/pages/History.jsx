@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import Header from "../components/Header";
+import Header from "../components/Header"; // ✅ Fixed - removed curly braces
 import { getUserHistory } from "../services/api";
 
 export default function History() {
@@ -12,27 +12,42 @@ export default function History() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const fetchHistory = useCallback(async () => {
     if (!userId) {
       setError("No logged-in user.");
       setLoading(false);
       return;
     }
 
-    (async () => {
-      try {
-        const res = await getUserHistory(userId);
-        if (res.success) {
-          setHistory(res.historyData);
-        } else {
-          setError(res.error || "Unable to load history.");
-        }
-      } catch (e) {
-        setError("Server error. Check backend.");
+    try {
+      const res = await getUserHistory(userId);
+      if (res.success) {
+        setHistory(res.historyData);
+        setError("");
+      } else {
+        setError(res.error || "Unable to load history.");
       }
+    } catch {
+      setError("Server error. Check backend.");
+    } finally {
       setLoading(false);
-    })();
+    }
   }, [userId]);
+
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
+  // Auto-refresh every 5 seconds to catch new predictions
+  useEffect(() => {
+    if (!userId) return;
+
+    const interval = setInterval(() => {
+      fetchHistory();
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [userId, fetchHistory]);
 
   if (loading) return <div className="loading-container">Loading history…</div>;
   if (error) return <div className="error-container">{error}</div>;
@@ -52,7 +67,13 @@ export default function History() {
             {history.map((item) => (
               <div key={item.id} className="history-card">
                 <div className="history-date">
-                  <strong>Date: </strong> {item.created_at}
+                  <strong>Date: </strong> {new Date(item.created_at).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
                 </div>
 
                 <div className="history-grid">
@@ -98,7 +119,7 @@ export default function History() {
 
                   <div className="history-item probability-item">
                     <span className="item-label">Probability:</span>
-                    <span className="item-value">{(item.probability * 100).toFixed(1)}%</span>
+                    <span className="item-value">{item.probability}%</span>
                   </div>
                 </div>
               </div>

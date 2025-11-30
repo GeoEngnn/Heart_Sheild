@@ -1,4 +1,4 @@
-# app.py - COMPLETE ENHANCED VERSION WITH REAL-TIME REVIEW SYSTEM & MISSING VALUES HANDLING
+# app.py - POSTGRESQL ENHANCED VERSION WITH ALL FEATURES PRESERVED
 from flask import Flask, request, jsonify, redirect, session, url_for, send_file, render_template, Response, stream_with_context
 import pandas as pd
 import os
@@ -28,6 +28,11 @@ import threading
 from flask import g
 from flask_cors import CORS
 
+# ===== POSTGRESQL INTEGRATION =====
+from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
+from models import db, User, Prediction, Review  # Import from your models.py
+
 # Add current directory to Python path for imports
 sys.path.append(os.path.dirname(__file__))
 
@@ -47,10 +52,16 @@ CORS(app, resources={
 })
 app.secret_key = 'heartshield_professional_ui_2024'
 app.config['UPLOAD_FOLDER'] = 'uploads'
-app.config['DATABASE'] = 'database/heartshield.db'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-os.makedirs('database', exist_ok=True)
+# ===== POSTGRESQL CONFIGURATION =====
+app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://heartshield_user:geo123@localhost:5432/heartshield_db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize PostgreSQL database
+db.init_app(app)
+migrate = Migrate(app, db)
+
 os.makedirs('uploads', exist_ok=True)
 os.makedirs('static/charts', exist_ok=True)
 os.makedirs('templates', exist_ok=True)
@@ -101,77 +112,27 @@ def cleanup_uploads():
 cleanup_uploads()
 atexit.register(cleanup_uploads)
 
+# ===== DATABASE INITIALIZATION (PostgreSQL) =====
 def init_database():
-    conn = sqlite3.connect(app.config['DATABASE'])
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            full_name TEXT,
-            age INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS predictions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            age INTEGER,
-            height REAL,
-            weight REAL,
-            gender TEXT,
-            systolic_bp INTEGER,
-            diastolic_bp INTEGER,
-            cholesterol INTEGER,
-            glucose INTEGER,
-            smoking INTEGER,
-            alcohol_intake INTEGER,
-            physical_activity INTEGER,
-            bmi REAL,
-            probability REAL,
-            risk_level TEXT,
-            prediction_result TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    ''')
-
-    # Reviews table (dynamic user reviews)
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS reviews (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            username TEXT,
-            rating INTEGER,
-            comment TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    ''')
-    
-    conn.commit()
-    conn.close()
+    """Initialize PostgreSQL database tables"""
+    with app.app_context():
+        try:
+            db.create_all()
+            print("✅ PostgreSQL database tables created successfully!")
+        except Exception as e:
+            print(f"❌ Database initialization error: {e}")
 
 init_database()
 
-def get_db_connection():
-    conn = sqlite3.connect(app.config['DATABASE'])
-    conn.row_factory = sqlite3.Row
-    return conn
-
 # ===== HELPER FUNCTION TO FETCH REVIEWS =====
 def fetch_reviews(limit=50):
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT id, user_id, username, rating, comment, created_at FROM reviews ORDER BY id DESC LIMIT ?", (limit,))
-    rows = cur.fetchall()
-    conn.close()
-    return [row_to_dict(r) for r in rows]
+    """Fetch reviews from PostgreSQL"""
+    try:
+        reviews = Review.query.order_by(Review.created_at.desc()).limit(limit).all()
+        return [review.to_dict() for review in reviews]
+    except Exception as e:
+        print(f"❌ Error fetching reviews: {e}")
+        return []
 
 # ===== ML MODEL INTEGRATION WITH ERROR HANDLING =====
 ML_MODEL_AVAILABLE = False
@@ -246,19 +207,6 @@ def extract_medical_data_with_gemini(image_path):
             "Weight": extracted.get("weight"),
             "Gender": extracted.get("gender"),
         }
-
-        # --- AUTO SAVE TO HISTORY IF USER IS LOGGED IN ---
-        user_id = getattr(g, "current_user_id", None)
-
-        if user_id:
-            prediction = predictor.predict_risk(converted)
-
-            save_to_history(
-                user_id=user_id,
-                extracted_data=converted,
-                prediction_data=prediction,
-                file_path=image_path
-            )
 
         return converted
 
@@ -1374,29 +1322,22 @@ def api_reviews():
         try:
             data = request.get_json() if request.is_json else request.form.to_dict()
             user_id = data.get('user_id') or data.get('userId')
-            username = data.get('username') or data.get('user') or 'Anonymous'
             rating = int(data.get('rating', 5))
             comment = data.get('comment', '').strip()
 
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO reviews (user_id, username, rating, comment, created_at) VALUES (?, ?, ?, ?, datetime('now'))",
-                (user_id, username, rating, comment)
+            if not user_id:
+                return jsonify({"success": False, "error": "user_id is required"}), 400
+
+            # Create new review in PostgreSQL - only pass valid fields
+            new_review = Review(
+                user_id=int(user_id),
+                rating=rating,
+                comment=comment
             )
-            conn.commit()
-            review_id = cur.lastrowid
-            conn.close()
+            db.session.add(new_review)
+            db.session.commit()
 
-            # return the newly inserted review
-            conn = get_db_connection()
-            cur = conn.cursor()
-            cur.execute("SELECT id, user_id, username, rating, comment, created_at FROM reviews WHERE id = ?", (review_id,))
-            row = cur.fetchone()
-            new_review = row_to_dict(row) if row else None
-            conn.close()
-
-            return jsonify({"success": True, "review": new_review}), 201
+            return jsonify({"success": True, "review": new_review.to_dict()}), 201
         except Exception as e:
             traceback.print_exc()
             return jsonify({"success": False, "error": str(e)}), 500
@@ -1423,16 +1364,12 @@ def api_reviews_stream():
         current = last_known
         while True:
             try:
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute("SELECT id, user_id, username, rating, comment, created_at FROM reviews WHERE id > ? ORDER BY id ASC", (current,))
-                rows = cur.fetchall()
-                conn.close()
-
-                for r in rows:
-                    review = {k: r[k] for k in r.keys()}
-                    current = max(current, review["id"])
-                    yield f"data: {json.dumps(review, default=str)}\n\n"
+                # Get new reviews from PostgreSQL
+                new_reviews = Review.query.filter(Review.id > current).order_by(Review.id.asc()).all()
+                
+                for review in new_reviews:
+                    current = max(current, review.id)
+                    yield f"data: {json.dumps(review.to_dict(), default=str)}\n\n"
 
                 time.sleep(1)  # polling interval
             except GeneratorExit:
@@ -1447,23 +1384,15 @@ def api_reviews_stream():
 def api_reviews_stats():
     """Get review statistics"""
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
         # Total reviews
-        cur.execute('SELECT COUNT(*) as total FROM reviews')
-        total_reviews = cur.fetchone()['total']
+        total_reviews = Review.query.count()
         
         # Average rating
-        cur.execute('SELECT AVG(rating) as avg_rating FROM reviews')
-        avg_rating = cur.fetchone()['avg_rating'] or 0
+        avg_rating = db.session.query(db.func.avg(Review.rating)).scalar() or 0
         
         # 5-star reviews percentage
-        cur.execute('SELECT COUNT(*) as five_star FROM reviews WHERE rating = 5')
-        five_star_count = cur.fetchone()['five_star']
+        five_star_count = Review.query.filter_by(rating=5).count()
         five_star_percentage = round((five_star_count / total_reviews * 100) if total_reviews > 0 else 0, 1)
-        
-        conn.close()
         
         return jsonify({
             'success': True,
@@ -1588,7 +1517,6 @@ def perform_ocr():
         try:
             # Step 1: Perform AI-Powered Extraction (Enhanced Gemini AI + OCR)
             print(f"🔍 Processing medical document: {filename}")
-            g.current_user_id = request.form.get("user_id") or request.args.get("user_id")
             extracted_data = extract_medical_data_with_gemini(filepath)
 
             
@@ -1622,6 +1550,24 @@ def perform_ocr():
             # Step 3: Make prediction only if we have enough data and no critical missing values
             if len(extracted_data) >= 3 and not has_missing_critical:
                 prediction_result = predictor.predict_risk(extracted_data)
+                
+                # --- SAVE TO HISTORY IF USER IS LOGGED IN ---
+                user_id = request.form.get("user_id") or request.args.get("user_id")
+                if user_id and str(user_id).strip():
+                    try:
+                        print(f"💾 Attempting to save OCR prediction for user_id: {user_id}")
+                        save_to_history(
+                            user_id=int(user_id),
+                            extracted_data=extracted_data,
+                            prediction_data=prediction_result,
+                            file_path=filepath
+                        )
+                        print("✅ OCR Prediction saved to database successfully!")
+                    except Exception as e:
+                        print(f"❌ Error saving OCR prediction: {e}")
+                        traceback.print_exc()
+                else:
+                    print(f"⚠️ Skipping database save for OCR prediction - user_id is empty or None")
             
         except Exception as e:
             print(f"❌ Error during processing: {e}")
@@ -2206,7 +2152,7 @@ def test_prediction():
             <h2>🧪 Test Heart Disease Prediction</h2>
             <p>Enter patient data to get AI-powered risk assessment with NEW features:</p>
             
-            <form method="POST" action="/api/predict">
+            <form method="POST" action="/api/predict" id="predictionForm">
                 <div class="form-section">
                     <h3>📊 Basic Information</h3>
                     <div class="form-grid">
@@ -2256,46 +2202,121 @@ def test_prediction():
                     </div>
                 </div>
 
+                <input type="hidden" name="user_id" id="user_id" value="">
+
                 <button type="submit" class="btn">Get Prediction</button>
             </form>
             <br>
             <a href="/" style="background: #7f8c8d; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Back to Home</a>
             <a href="/reviews" style="background: #f39c12; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-left: 10px;">⭐ Reviews</a>
         </div>
+        
+        <script>
+            // Get user ID from localStorage if available
+            document.addEventListener('DOMContentLoaded', function() {
+                const user = JSON.parse(localStorage.getItem('heartshield_user'));
+                if (user && user.id) {
+                    document.getElementById('user_id').value = user.id;
+                }
+            });
+        </script>
     </body>
     </html>
     '''
 
 @app.route('/api/predict', methods=['POST'])
 def api_predict():
-    """API endpoint for predictions with NEW features"""
+    """API endpoint for predictions with NEW features - saves to database"""
     try:
-        # Get form data for NEW features
-        patient_data = {
-            'Age': int(request.form.get('Age', 50)),
-            'Height': float(request.form.get('Height', 170)),
-            'Weight': float(request.form.get('Weight', 70)),
-            'Gender': request.form.get('Gender', 'Male'),
-            'Systolic_BP': int(request.form.get('Systolic_BP', 120)),
-            'Diastolic_BP': int(request.form.get('Diastolic_BP', 80)),
-            'Cholesterol': int(request.form.get('Cholesterol', 200)),
-            'Glucose': int(request.form.get('Glucose', 100)),
-            'Smoking': int(request.form.get('Smoking', 0)),
-            'Alcohol_Intake': int(request.form.get('Alcohol_Intake', 0)),
-            'Physical_Activity': int(request.form.get('Physical_Activity', 1))
-        }
-        
+        # Check if this is an API call (JSON) or web form submission
+        is_api_call = request.content_type == 'application/json'
+
+        if is_api_call:
+            # Handle JSON API request from React frontend
+            data = request.get_json()
+            user_id = data.get('user_id')
+            print(f"\n🔍 DEBUG: API call - Received user_id: '{user_id}' (type: {type(user_id).__name__})")
+            print(f"🔍 DEBUG: user_id is truthy: {bool(user_id)}")
+
+            # Get form data for NEW features
+            patient_data = {
+                'Age': int(data.get('Age', 50)),
+                'Height': float(data.get('Height', 170)),
+                'Weight': float(data.get('Weight', 70)),
+                'Gender': data.get('Gender', 'Male'),
+                'Systolic_BP': int(data.get('Systolic_BP', 120)),
+                'Diastolic_BP': int(data.get('Diastolic_BP', 80)),
+                'Cholesterol': int(data.get('Cholesterol', 200)),
+                'Glucose': int(data.get('Glucose', 100)),
+                'Smoking': int(data.get('Smoking', 0)),
+                'Alcohol_Intake': int(data.get('Alcohol_Intake', 0)),
+                'Physical_Activity': int(data.get('Physical_Activity', 1))
+            }
+        else:
+            # Handle traditional form submission
+            user_id = request.form.get('user_id')
+            print(f"\n🔍 DEBUG: Form call - Received user_id: '{user_id}' (type: {type(user_id).__name__})")
+            print(f"🔍 DEBUG: user_id is truthy: {bool(user_id)}")
+
+            # Get form data for NEW features
+            patient_data = {
+                'Age': int(request.form.get('Age', 50)),
+                'Height': float(request.form.get('Height', 170)),
+                'Weight': float(request.form.get('Weight', 70)),
+                'Gender': request.form.get('Gender', 'Male'),
+                'Systolic_BP': int(request.form.get('Systolic_BP', 120)),
+                'Diastolic_BP': int(request.form.get('Diastolic_BP', 80)),
+                'Cholesterol': int(request.form.get('Cholesterol', 200)),
+                'Glucose': int(request.form.get('Glucose', 100)),
+                'Smoking': int(request.form.get('Smoking', 0)),
+                'Alcohol_Intake': int(request.form.get('Alcohol_Intake', 0)),
+                'Physical_Activity': int(request.form.get('Physical_Activity', 1))
+            }
+
         # Calculate BMI
         height_m = patient_data['Height'] / 100
         patient_data['BMI'] = patient_data['Weight'] / (height_m ** 2)
-        
+
         print(f"📊 Patient data received: {patient_data}")
-        
+
         # Get prediction with NEW features
         result = predictor.predict_risk(patient_data)
-        
-        # Return beautiful result page
-        risk_color = "#27ae60" if result['risk_category'] == 'Low' else "#f39c12" if result['risk_category'] == 'Moderate' else "#e74c3c"
+
+        # Save to database if user is logged in
+        saved = False
+        if user_id and str(user_id).strip():
+            try:
+                print(f"💾 Attempting to save prediction for user_id: {user_id}")
+                new_prediction = Prediction(
+                    user_id=int(user_id),
+                    age=patient_data.get("Age"),
+                    height=patient_data.get("Height"),
+                    weight=patient_data.get("Weight"),
+                    gender=patient_data.get("Gender"),
+                    systolic_bp=patient_data.get("Systolic_BP"),
+                    diastolic_bp=patient_data.get("Diastolic_BP"),
+                    cholesterol=patient_data.get("Cholesterol"),
+                    glucose=patient_data.get("Glucose"),
+                    smoking=patient_data.get("Smoking", 0),
+                    alcohol_intake=patient_data.get("Alcohol_Intake", 0),
+                    physical_activity=patient_data.get("Physical_Activity", 1),
+                    bmi=patient_data.get("BMI"),
+                    heart_rate=patient_data.get("Heart_Rate"),
+                    probability=result.get("probability", 0),  # Already as decimal (0-1)
+                    risk_level=result.get("risk_category", "Unknown"),
+                    confidence=result.get("confidence", 0),  # Already as percentage
+                    medical_data=json.dumps(patient_data)
+                )
+                db.session.add(new_prediction)
+                db.session.commit()
+                saved = True
+                print("✅ Prediction saved to database successfully!")
+            except Exception as e:
+                print(f"❌ Error saving prediction: {e}")
+                traceback.print_exc()
+                db.session.rollback()
+        else:
+            print(f"⚠️ Skipping database save - user_id is empty or None: '{user_id}'")
 
         # Clean up the message by removing fallback mode text
         analysis_message = result.get('message', 'AI Medical Analysis Complete')
@@ -2303,53 +2324,77 @@ def api_predict():
         analysis_message = re.sub(r'\s*\(Rule-Based\)', '', analysis_message)
         analysis_message = re.sub(r'\s*\[Rule-Based\]', '', analysis_message)
 
-        return f'''
-        <html>
-        <head>
-            <title>Prediction Result - HeartShield</title>
-            <style>
-                body {{ font-family: Arial, sans-serif; background: #f0f8ff; margin: 0; padding: 40px; }}
-                .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }}
-                .result-box {{ background: #e8f4f8; padding: 20px; border-radius: 5px; border-left: 5px solid {risk_color}; }}
-                .btn {{ background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; }}
-                .data-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 15px 0; }}
-                .data-item {{ background: white; padding: 10px; border-radius: 5px; text-align: center; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>🎯 Prediction Result</h2>
-                
-                <div class="result-box">
-                    <h3 style="color: {risk_color};">Risk: {result.get('risk_category', 'Unknown')}</h3>
-                    <p><strong>Risk Percentage:</strong> {result.get('risk_percentage', 'N/A')}%</p>
-                    <p><strong>Confidence:</strong> {result.get('confidence', 'N/A')}%</p>
-                    <p><strong>Analysis:</strong> {analysis_message}</p>
-                </div>
+        if is_api_call:
+            # Return JSON response for API calls
+            return jsonify({
+                "success": True,
+                "saved": saved,
+                "result": {
+                    "risk_category": result.get('risk_category', 'Unknown'),
+                    "risk_percentage": result.get('risk_percentage', 'N/A'),
+                    "confidence": result.get('confidence', 'N/A'),
+                    "message": analysis_message,
+                    "probability": result.get('probability', 0),
+                    "prediction": result.get('prediction', 0),
+                    "model_used": result.get('model_used', 'Unknown'),
+                    "accuracy": result.get('accuracy', 0)
+                },
+                "patient_data": patient_data
+            }), 200
+        else:
+            # Return HTML response for web form submissions
+            risk_color = "#27ae60" if result['risk_category'] == 'Low' else "#f39c12" if result['risk_category'] == 'Moderate' else "#e74c3c"
 
-                <div style="margin: 20px 0;">
-                    <h4>📋 Patient Data Used:</h4>
-                    <div class="data-grid">
-                        <div class="data-item">Age: {patient_data['Age']}</div>
-                        <div class="data-item">Height: {patient_data['Height']}cm</div>
-                        <div class="data-item">Weight: {patient_data['Weight']}kg</div>
-                        <div class="data-item">BMI: {patient_data['BMI']:.1f}</div>
-                        <div class="data-item">BP: {patient_data['Systolic_BP']}/{patient_data['Diastolic_BP']}</div>
-                        <div class="data-item">Cholesterol: {patient_data['Cholesterol']}</div>
+            return f'''
+            <html>
+            <head>
+                <title>Prediction Result - HeartShield</title>
+                <style>
+                    body {{ font-family: Arial, sans-serif; background: #f0f8ff; margin: 0; padding: 40px; }}
+                    .container {{ max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }}
+                    .result-box {{ background: #e8f4f8; padding: 20px; border-radius: 5px; border-left: 5px solid {risk_color}; }}
+                    .btn {{ background: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; }}
+                    .data-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 15px 0; }}
+                    .data-item {{ background: white; padding: 10px; border-radius: 5px; text-align: center; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h2>🎯 Prediction Result</h2>
+
+                    <div class="result-box">
+                        <h3 style="color: {risk_color};">Risk: {result.get('risk_category', 'Unknown')}</h3>
+                        <p><strong>Risk Percentage:</strong> {result.get('risk_percentage', 'N/A')}%</p>
+                        <p><strong>Confidence:</strong> {result.get('confidence', 'N/A')}%</p>
+                        <p><strong>Analysis:</strong> {analysis_message}</p>
                     </div>
+
+                    <div style="margin: 20px 0;">
+                        <h4>📋 Patient Data Used:</h4>
+                        <div class="data-grid">
+                            <div class="data-item">Age: {patient_data['Age']}</div>
+                            <div class="data-item">Height: {patient_data['Height']}cm</div>
+                            <div class="data-item">Weight: {patient_data['Weight']}kg</div>
+                            <div class="data-item">BMI: {patient_data['BMI']:.1f}</div>
+                            <div class="data-item">BP: {patient_data['Systolic_BP']}/{patient_data['Diastolic_BP']}</div>
+                            <div class="data-item">Cholesterol: {patient_data['Cholesterol']}</div>
+                        </div>
+                    </div>
+
+                    <br>
+                    <a href="/test-prediction" class="btn">Test Another Prediction</a>
+                    <a href="/reviews" class="btn" style="background: #f39c12;">⭐ User Reviews</a>
+                    <a href="/" class="btn" style="background: #7f8c8d;">Back to Home</a>
                 </div>
-                
-                <br>
-                <a href="/test-prediction" class="btn">Test Another Prediction</a>
-                <a href="/reviews" class="btn" style="background: #f39c12;">⭐ User Reviews</a>
-                <a href="/" class="btn" style="background: #7f8c8d;">Back to Home</a>
-            </div>
-        </body>
-        </html>
-        '''
-        
+            </body>
+            </html>
+            '''
+
     except Exception as e:
-        return f"Error: {str(e)}", 500
+        if request.content_type == 'application/json':
+            return jsonify({"success": False, "error": str(e)}), 500
+        else:
+            return f"Error: {str(e)}", 500
 
 @app.route('/health-check')
 def health_check():
@@ -2362,15 +2407,50 @@ def health_check():
         "review_system": "ACTIVE with Real-time SSE",
         "missing_values_handling": "ACTIVE",
         "accuracy": ML_ACCURACY,
-        "features": "NEW FEATURES: Age, Height, Weight, BP, Cholesterol, Glucose, Lifestyle, Enhanced Gemini AI OCR, Real-time Reviews, Missing Values Handling"
+        "features": "NEW FEATURES: Age, Height, Weight, BP, Cholesterol, Glucose, Lifestyle, Enhanced Gemini AI OCR, Real-time Reviews, Missing Values Handling",
+        "database": "PostgreSQL - ACTIVE"
     })
 
 # ===== BEGIN: REACT-API ENDPOINTS =====
 
-def row_to_dict(row):
-    if row is None:
-        return None
-    return {k: row[k] for k in row.keys()}
+def save_to_history(user_id, extracted_data, prediction_data, file_path):
+    try:
+        # Calculate BMI if height and weight are available
+        bmi = extracted_data.get("BMI")
+        if not bmi and extracted_data.get("Height") and extracted_data.get("Weight"):
+            height_m = extracted_data["Height"] / 100
+            bmi = extracted_data["Weight"] / (height_m ** 2)
+
+        # Create new prediction record in PostgreSQL
+        new_prediction = Prediction(
+            user_id=user_id,
+            age=extracted_data.get("Age"),
+            height=extracted_data.get("Height"),
+            weight=extracted_data.get("Weight"),
+            gender=extracted_data.get("Gender"),
+            systolic_bp=extracted_data.get("Systolic_BP"),
+            diastolic_bp=extracted_data.get("Diastolic_BP"),
+            cholesterol=extracted_data.get("Cholesterol"),
+            glucose=extracted_data.get("Glucose"),
+            smoking=extracted_data.get("Smoking", 0),
+            alcohol_intake=extracted_data.get("Alcohol_Intake", 0),
+            physical_activity=extracted_data.get("Physical_Activity", 1),
+            bmi=bmi,
+            heart_rate=extracted_data.get("Heart_Rate"),
+            probability=prediction_data.get("probability", 0),  # Already as decimal (0-1)
+            risk_level=prediction_data.get("risk_category", "Unknown"),
+            confidence=prediction_data.get("confidence", 0),  # Use confidence instead of accuracy
+            medical_data=json.dumps(extracted_data)
+        )
+
+        db.session.add(new_prediction)
+        db.session.commit()
+        print("✅ History saved to PostgreSQL")
+        return True
+
+    except Exception as e:
+        print("❌ Error saving history:", e)
+        return False
 
 @app.route('/api/register', methods=['POST'])
 def api_register():
@@ -2380,27 +2460,26 @@ def api_register():
         email = data.get('email')
         password = data.get('password')
         full_name = data.get('full_name') or data.get('fullName') or None
-        age = data.get('age')
 
         if not username or not email or not password:
             return jsonify({"success": False, "error": "username, email and password are required"}), 400
-
         password_hash = generate_password_hash(password)
 
-        conn = get_db_connection()
-        cur = conn.cursor()
+        # Create new user in PostgreSQL
         try:
-            cur.execute(
-                "INSERT INTO users (username, email, password_hash, full_name, age) VALUES (?, ?, ?, ?, ?)",
-                (username, email, password_hash, full_name, int(age) if age else None)
+            new_user = User(
+                username=username,
+                email=email,
+                password_hash=password_hash,
+                full_name=full_name or None
             )
-            conn.commit()
-            user_id = cur.lastrowid
-        except sqlite3.IntegrityError as e:
-            conn.close()
-            message = "Username or email already exists."
-            return jsonify({"success": False, "error": message}), 409
-        conn.close()
+            db.session.add(new_user)
+            db.session.commit()
+            user_id = new_user.id
+        except Exception as e:
+            if "unique constraint" in str(e).lower():
+                return jsonify({"success": False, "error": "Username or email already exists."}), 409
+            raise e
 
         return jsonify({"success": True, "user_id": user_id}), 201
 
@@ -2418,28 +2497,19 @@ def api_login():
         if not identifier or not password:
             return jsonify({"success": False, "error": "Identifier (email or username) and password required"}), 400
 
-        conn = get_db_connection()
-        cur = conn.cursor()
+        # Find user in PostgreSQL
+        user = User.query.filter(
+            (User.email == identifier) | (User.username == identifier)
+        ).first()
 
-        # Try email first, then username
-        cur.execute("SELECT * FROM users WHERE email = ? COLLATE NOCASE", (identifier,))
-        row = cur.fetchone()
-        if row is None:
-            cur.execute("SELECT * FROM users WHERE username = ? COLLATE NOCASE", (identifier,))
-            row = cur.fetchone()
-
-        if row is None:
-            conn.close()
+        if not user:
             return jsonify({"success": False, "error": "User not found"}), 404
 
-        user = row_to_dict(row)
-        conn.close()
-
-        if not check_password_hash(user['password_hash'], password):
+        if not check_password_hash(user.password_hash, password):
             return jsonify({"success": False, "error": "Invalid credentials"}), 401
 
         # Build safe user object (no password_hash)
-        safe_user = {k: user[k] for k in user.keys() if k != 'password_hash'}
+        safe_user = user.to_dict()
         return jsonify({"success": True, "user": safe_user}), 200
 
     except Exception as e:
@@ -2452,50 +2522,20 @@ def api_update_profile():
         data = request.get_json() if request.is_json else request.form.to_dict()
         user_id = data.get("user_id")
         full_name = data.get("full_name")
-        age = data.get("age")
 
         if not user_id:
             return jsonify({"success": False, "error": "user_id is required"}), 400
 
-        # Validate inputs
-        if age is not None:
-            try:
-                age = int(age)
-            except ValueError:
-                return jsonify({"success": False, "error": "Age must be an integer"}), 400
-
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        # Check if user exists
-        cur.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-        row = cur.fetchone()
-        if not row:
-            conn.close()
+        # Find user in PostgreSQL
+        user = User.query.get(user_id)
+        if not user:
             return jsonify({"success": False, "error": "User not found"}), 404
 
-        # Perform the update
-        cur.execute(
-            "UPDATE users SET full_name = ?, age = ? WHERE id = ?",
-            (full_name, age, user_id)
-        )
-        conn.commit()
+        # Update user
+        user.full_name = full_name
+        db.session.commit()
 
-        # Fetch updated user
-        cur.execute("SELECT id, username, email, full_name, age, created_at FROM users WHERE id = ?", (user_id,))
-        updated = cur.fetchone()
-        conn.close()
-
-        updated_user = {
-            "id": updated["id"],
-            "username": updated["username"],
-            "email": updated["email"],
-            "full_name": updated["full_name"],
-            "age": updated["age"],
-            "created_at": updated["created_at"]
-        }
-
-        return jsonify({"success": True, "user": updated_user}), 200
+        return jsonify({"success": True, "user": user.to_dict()}), 200
 
     except Exception as e:
         traceback.print_exc()
@@ -2504,73 +2544,10 @@ def api_update_profile():
 @app.route('/api/history/<int:user_id>', methods=['GET'])
 def api_history(user_id):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        # AUTO-UPDATE TABLE SCHEMA
-        required_columns = {
-            "age": "INTEGER",
-            "height": "REAL",
-            "weight": "REAL",
-            "gender": "TEXT",
-            "systolic_bp": "INTEGER",
-            "diastolic_bp": "INTEGER",
-            "cholesterol": "REAL",
-            "glucose": "REAL",
-            "smoking": "INTEGER",
-            "alcohol_intake": "INTEGER",
-            "physical_activity": "INTEGER",
-            "bmi": "REAL",
-            "probability": "REAL",
-            "risk_level": "TEXT",
-            "prediction_result": "TEXT",
-            "created_at": "TEXT"
-        }
-
-        # Get actual columns in predictions table
-        cur.execute("PRAGMA table_info(predictions);")
-        existing_cols = {row[1] for row in cur.fetchall()}
-
-        # Add missing columns automatically
-        for col_name, col_type in required_columns.items():
-            if col_name not in existing_cols:
-                print(f"[DB FIX] Adding missing column: {col_name} ({col_type})")
-                cur.execute(f"ALTER TABLE predictions ADD COLUMN {col_name} {col_type};")
-                conn.commit()
-
-        # MAIN QUERY
-        cur.execute(
-            "SELECT id, user_id, age, height, weight, gender, systolic_bp, diastolic_bp, cholesterol, glucose, "
-            "smoking, alcohol_intake, physical_activity, bmi, probability, risk_level, prediction_result, created_at "
-            "FROM predictions WHERE user_id = ? ORDER BY created_at DESC",
-            (user_id,)
-        )
-
-        rows = cur.fetchall()
-        conn.close()
-
-        history = []
-        for r in rows:
-            history.append({
-                "id": r["id"],
-                "user_id": r["user_id"],
-                "age": r["age"],
-                "height": r["height"],
-                "weight": r["weight"],
-                "gender": r["gender"],
-                "systolic_bp": r["systolic_bp"],
-                "diastolic_bp": r["diastolic_bp"],
-                "cholesterol": r["cholesterol"],
-                "glucose": r["glucose"],
-                "smoking": r["smoking"],
-                "alcohol_intake": r["alcohol_intake"],
-                "physical_activity": r["physical_activity"],
-                "bmi": r["bmi"],
-                "probability": r["probability"],
-                "risk_level": r["risk_level"],
-                "prediction_result": r["prediction_result"],
-                "created_at": r["created_at"]
-            })
+        # Get predictions from PostgreSQL
+        predictions = Prediction.query.filter_by(user_id=user_id).order_by(Prediction.created_at.desc()).all()
+        
+        history = [prediction.to_dict() for prediction in predictions]
 
         return jsonify({"success": True, "historyData": history}), 200
 
@@ -2578,123 +2555,41 @@ def api_history(user_id):
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
-def save_to_history(user_id, extracted_data, prediction_data, file_path):
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-
-        age = extracted_data.get("Age")
-        height = extracted_data.get("Height")
-        weight = extracted_data.get("Weight")
-        gender = extracted_data.get("Gender")
-        systolic = extracted_data.get("Systolic_BP")
-        diastolic = extracted_data.get("Diastolic_BP")
-        cholesterol = extracted_data.get("Cholesterol")
-        glucose = extracted_data.get("Glucose")
-
-        smoking = extracted_data.get("Smoking")
-        alcohol = extracted_data.get("Alcohol_Intake")
-        activity = extracted_data.get("Physical_Activity")
-
-        bmi = None
-        if height and weight:
-            bmi = float(weight) / ((float(height) / 100) ** 2)
-
-        probability = prediction_data.get("probability")
-        risk_level = prediction_data.get("risk_category")
-        message = prediction_data.get("message")
-
-        cur.execute("""
-            INSERT INTO predictions 
-            (user_id, age, height, weight, gender, systolic_bp, diastolic_bp,
-             cholesterol, glucose, smoking, alcohol_intake, physical_activity,
-             bmi, probability, risk_level, prediction_result, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-        """, (
-            user_id, age, height, weight, gender, systolic, diastolic,
-            cholesterol, glucose, smoking, alcohol, activity,
-            bmi, probability, risk_level, message
-        ))
-
-        conn.commit()
-        conn.close()
-        print("✅ History saved")
-        return True
-
-    except Exception as e:
-        print("❌ Error saving history:", e)
-        return False
-
 @app.route('/api/status/<int:user_id>', methods=['GET'])
 def api_status(user_id):
     try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        # Get last two predictions
-        cur.execute(
-            "SELECT probability, risk_level, created_at FROM predictions WHERE user_id = ? ORDER BY created_at DESC LIMIT 2",
-            (user_id,)
-        )
-        rows = cur.fetchall()
-        conn.close()
+        # Get last two predictions from PostgreSQL
+        predictions = Prediction.query.filter_by(user_id=user_id).order_by(Prediction.created_at.desc()).limit(2).all()
 
-        if not rows or len(rows) == 0:
+        if not predictions:
             return jsonify({"success": True, "status": "no_data", "message": "No prediction history found"}), 200
 
-        latest = rows[0]
-        latest_prob = latest['probability'] if latest['probability'] is not None else None
-        latest_risk = latest['risk_level'] if latest['risk_level'] is not None else None
-        latest_time = latest['created_at']
+        latest = predictions[0]
+        latest_prob = latest.probability
+        latest_risk = latest.risk_level
+        latest_time = latest.created_at
 
         trend = "stable"
-        if len(rows) > 1:
-            prev = rows[1]
-            prev_prob = prev['probability'] if prev['probability'] is not None else None
-            if latest_prob is not None and prev_prob is not None:
+        if len(predictions) > 1:
+            prev = predictions[1]
+            if latest_prob is not None and prev.probability is not None:
                 # compare numeric probabilities
-                if latest_prob < prev_prob - 0.02:
+                if latest_prob < prev.probability - 0.02:
                     trend = "improving"
-                elif latest_prob > prev_prob + 0.02:
+                elif latest_prob > prev.probability + 0.02:
                     trend = "worsening"
                 else:
                     trend = "stable"
 
-        # Build a small payload with latest vitals
-        conn2 = get_db_connection()
-        cur2 = conn2.cursor()
-        cur2.execute(
-            "SELECT id, age, height, weight, gender, systolic_bp, diastolic_bp, cholesterol, glucose, bmi, probability, risk_level, created_at "
-            "FROM predictions WHERE user_id = ? ORDER BY created_at DESC LIMIT 1",
-            (user_id,)
-        )
-        last_row = cur2.fetchone()
-        conn2.close()
-
-        latest_record = None
-        if last_row:
-            latest_record = {
-                "id": last_row["id"],
-                "age": last_row["age"],
-                "height": last_row["height"],
-                "weight": last_row["weight"],
-                "gender": last_row["gender"],
-                "systolic_bp": last_row["systolic_bp"],
-                "diastolic_bp": last_row["diastolic_bp"],
-                "cholesterol": last_row["cholesterol"],
-                "glucose": last_row["glucose"],
-                "bmi": last_row["bmi"],
-                "probability": last_row["probability"],
-                "risk_level": last_row["risk_level"],
-                "created_at": last_row["created_at"]
-            }
+        latest_record = latest.to_dict() if latest else None
 
         return jsonify({
             "success": True,
             "status": trend,
             "latest": latest_record,
-            "latest_probability": latest_prob,
+            "probability": latest_prob * 100 if latest_prob else 0,  # Convert to percentage for display
             "latest_risk": latest_risk,
-            "latest_time": latest_time
+            "latest_time": latest_time.isoformat() if latest_time else None
         }), 200
 
     except Exception as e:
@@ -2762,7 +2657,7 @@ def api_chatbot():
 # ===== END: REACT-API ENDPOINTS =====
 
 if __name__ == '__main__':
-    print("🚀 HeartShield ENHANCED Version with REAL-TIME REVIEW SYSTEM & MISSING VALUES HANDLING Running!")
+    print("🚀 HeartShield POSTGRESQL ENHANCED Version with REAL-TIME REVIEW SYSTEM & MISSING VALUES HANDLING Running!")
     print("✅ NEW FEATURES: Age, Height, Weight, BP, Cholesterol, Glucose, Lifestyle")
     print("✅ ENHANCED OCR: Upgraded Gemini AI + OCR.space API + Tesseract Fallback")
     print("✅ REAL-TIME REVIEWS: SSE streaming with live updates")
@@ -2773,6 +2668,7 @@ if __name__ == '__main__':
     print("📍 OCR.space API: CONFIGURED")
     print("📍 Real-time Reviews: ACTIVE with SSE")
     print("📍 Missing Values Handling: ACTIVE")
+    print("📍 DATABASE: PostgreSQL - ACTIVE")
     print("📍 Review Page: http://localhost:5000/reviews")
     print("📍 OCR Routes: /ocr and /perform_ocr")
     print("📍 React API Endpoints: /api/register, /api/login, /api/update-profile, /api/history, /api/status, /api/chatbot")

@@ -44,7 +44,7 @@ export default function DashboardCards({ status, latest }) {
           </span>
         </div>
         <div className="card-content">
-          <div className="metric-value">{status || "N/A"}</div>
+          <div className="metric-value">{status ? status.charAt(0).toUpperCase() + status.slice(1) : "N/A"}</div>
           <div className="prediction-title">Based on your latest prediction</div>
         </div>
       </div>

@@ -8,6 +8,7 @@ import History from "./pages/History.jsx";
 import Profile from "./pages/Profile.jsx";
 import Chatbot from "./pages/Chatbot.jsx";
 import Reviews from "./pages/Reviews";
+import Prediction from "./pages/Prediction.jsx";
 
 export default function AppRouter() {
   return (
@@ -24,6 +25,7 @@ export default function AppRouter() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/history" element={<History />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/prediction" element={<Prediction />} />
 
         {/* Chatbot - Added optional userId parameter and base route */}
         <Route path="/chatbot" element={<Chatbot />} />
