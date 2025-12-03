@@ -35,11 +35,12 @@ class Prediction(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     
     # Prediction results
-    probability = db.Column(db.Float, nullable=False)
-    risk_level = db.Column(db.String(20), nullable=False)
+    probability = db.Column(db.Float, nullable=False, default=0.0)  # 0.0 to 1.0
+    risk_level = db.Column(db.String(20), nullable=False, default="Unknown")
+    confidence = db.Column(db.Float, default=0.0)  # 0–100%
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
-    # Medical parameters from your OCR
+    # Medical parameters
     age = db.Column(db.Integer)
     gender = db.Column(db.String(10))
     height = db.Column(db.Float)
@@ -50,33 +51,36 @@ class Prediction(db.Model):
     cholesterol = db.Column(db.Float)
     glucose = db.Column(db.Float)
     heart_rate = db.Column(db.Integer)
-    smoking = db.Column(db.Boolean)
-    alcohol_intake = db.Column(db.Boolean)
-    physical_activity = db.Column(db.Boolean)
-    medical_data = db.Column(db.Text)  # Store OCR JSON data
-    confidence = db.Column(db.Float)
     
+    # Lifestyle - USE INTEGER, NOT BOOLEAN
+    smoking = db.Column(db.Integer, default=0)                    # 0 or 1
+    alcohol_intake = db.Column(db.Integer, default=0)             # 0 or 1
+    physical_activity = db.Column(db.Integer, default=1)          # 0 or 1
+    
+    medical_data = db.Column(db.Text)  # JSON string
+
     def to_dict(self):
         return {
             'id': self.id,
             'user_id': self.user_id,
-            'probability': round(self.probability * 100, 2) if self.probability else 0,
+            'probability': round(self.probability, 4),
+            'risk_percentage': round(self.probability * 100, 1),   # ← Add this for frontend
             'risk_level': self.risk_level,
+            'confidence': round(self.confidence, 1) if self.confidence else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'age': self.age,
             'gender': self.gender,
             'height': self.height,
             'weight': self.weight,
-            'bmi': self.bmi,
+            'bmi': round(self.bmi, 1) if self.bmi else None,
             'systolic_bp': self.systolic_bp,
             'diastolic_bp': self.diastolic_bp,
             'cholesterol': self.cholesterol,
             'glucose': self.glucose,
             'heart_rate': self.heart_rate,
-            'smoking': self.smoking,
-            'alcohol_intake': self.alcohol_intake,
-            'physical_activity': self.physical_activity,
-            'confidence': round(self.confidence * 100, 2) if self.confidence else 0
+            'smoking': bool(self.smoking),
+            'alcohol_intake': bool(self.alcohol_intake),
+            'physical_activity': bool(self.physical_activity),
         }
 
 class Review(db.Model):

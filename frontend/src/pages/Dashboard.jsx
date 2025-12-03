@@ -18,10 +18,10 @@ export default function Dashboard() {
     try {
       const statusRes = await getUserStatus(userId);
       setStatus(statusRes);
-      
+      console.log("✅ Fetched user status:", statusRes);
       const historyRes = await getUserHistory(userId);
       if (historyRes.success) setHistoryData(historyRes.historyData);
-      
+
       console.log("✅ Dashboard data refreshed at", new Date().toLocaleTimeString());
     } catch (error) {
       console.error("Error refreshing data:", error);
@@ -54,23 +54,23 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="dashboard-page"  style={{
-    backgroundImage: `url(${bgImage})`,
-    backgroundSize: 'cover',
-    backgroundRepeat: 'no-repeat',
-    backgroundPosition: 'center',
-    width: '100%',
-    height: '100vh'
-  }}>
+    <div className="dashboard-page" style={{
+      backgroundImage: `url(${bgImage})`,
+      backgroundSize: 'cover',
+      backgroundRepeat: 'no-repeat',
+      backgroundPosition: 'center',
+      width: '100%',
+      height: '100vh'
+    }}>
       <div className="navbar">
         <h2>HeartShield</h2>
         <div className="nav-links">
-           <a href="http://localhost:5000/">Scan & Predict</a>
+          <a href="http://localhost:5000/">Scan & Predict</a>
           <Link to="/history">History</Link>
           <Link to="/profile">Profile</Link>
           <Link to="/chatbot">Chat</Link>
-          <button 
-            className="btn-cta logout-btn" 
+          <button
+            className="btn-cta logout-btn"
             onClick={handleLogout}
           >
             Logout
@@ -85,13 +85,21 @@ export default function Dashboard() {
           <div className="dashboard-card status-card">
             <div className="card-header">
               <h3 className="card-title">Status</h3>
-              <span className={`status-badge ${!status?.status ? 'status-no-data' : ''}`}>
-                {status?.status ? status.status.charAt(0).toUpperCase() + status.status.slice(1) : "No Data"}
+              <span className={`status-badge ${status?.status === 'no_data' ? 'status-no-data' : ''}`}>
+                {status?.status === 'no_data'
+                  ? "No Data Yet"
+                  : status?.status
+                    ? status.status.charAt(0).toUpperCase() + status.status.slice(1)
+                    : "Loading..."}
               </span>
             </div>
             <div className="card-content">
               <div className="metric-value">
-                {status?.status ? status.status.charAt(0).toUpperCase() + status.status.slice(1) : "N/A"}
+                {status?.status === 'no_data'
+                  ? "Complete a scan to see your status"
+                  : status?.status
+                    ? status.status.charAt(0).toUpperCase() + status.status.slice(1)
+                    : "N/A"}
               </div>
             </div>
           </div>
@@ -103,7 +111,9 @@ export default function Dashboard() {
             <div className="card-content">
               <div className="metric-label">Cardiovascular Risk</div>
               <div className="metric-value">
-                {status?.latest_risk || "N/A"}
+                {status?.latest_risk
+                  ? status.latest_risk
+                  : "No prediction yet"}
               </div>
             </div>
           </div>
@@ -115,7 +125,9 @@ export default function Dashboard() {
             <div className="card-content">
               <div className="metric-label">Body Mass Index</div>
               <div className="metric-value">
-                {status?.latest?.bmi ? status.latest.bmi.toFixed(1) : "N/A"}
+                {status?.latest?.bmi
+                  ? status.latest.bmi.toFixed(1)
+                  : "No data"}
               </div>
             </div>
           </div>

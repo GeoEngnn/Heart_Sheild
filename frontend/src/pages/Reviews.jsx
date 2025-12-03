@@ -62,6 +62,7 @@ export default function Reviews() {
     }
 
     setSubmitting(true);
+    
 
     const payload = {
       user_id: user.id,

@@ -25,6 +25,8 @@ import glob
 import gc
 import queue
 import threading
+
+
 from flask import g
 from flask_cors import CORS
 
@@ -2302,7 +2304,7 @@ def api_predict():
                     physical_activity=patient_data.get("Physical_Activity", 1),
                     bmi=patient_data.get("BMI"),
                     heart_rate=patient_data.get("Heart_Rate"),
-                    probability=result.get("probability", 0),  # Already as decimal (0-1)
+                    probability=result.get("probability", 0) * 100,
                     risk_level=result.get("risk_category", "Unknown"),
                     confidence=result.get("confidence", 0),  # Already as percentage
                     medical_data=json.dumps(patient_data)
@@ -2437,7 +2439,7 @@ def save_to_history(user_id, extracted_data, prediction_data, file_path):
             physical_activity=extracted_data.get("Physical_Activity", 1),
             bmi=bmi,
             heart_rate=extracted_data.get("Heart_Rate"),
-            probability=prediction_data.get("probability", 0),  # Already as decimal (0-1)
+            probability=prediction_data.get("probability", 0) * 100,  # Already as decimal (0-1)
             risk_level=prediction_data.get("risk_category", "Unknown"),
             confidence=prediction_data.get("confidence", 0),  # Use confidence instead of accuracy
             medical_data=json.dumps(extracted_data)
@@ -2555,46 +2557,78 @@ def api_history(user_id):
         traceback.print_exc()
         return jsonify({"success": False, "error": str(e)}), 500
 
+import logging  
+logging.basicConfig(level=logging.INFO)
+
 @app.route('/api/status/<int:user_id>', methods=['GET'])
 def api_status(user_id):
     try:
-        # Get last two predictions from PostgreSQL
-        predictions = Prediction.query.filter_by(user_id=user_id).order_by(Prediction.created_at.desc()).limit(2).all()
+        logging.info(f"STATUS API CALLED for user_id={user_id}")
 
-        if not predictions:
-            return jsonify({"success": True, "status": "no_data", "message": "No prediction history found"}), 200
+        latest_prediction = (
+            Prediction.query
+            .filter_by(user_id=user_id)
+            .order_by(Prediction.created_at.desc())
+            .first()
+        )
 
-        latest = predictions[0]
-        latest_prob = latest.probability
-        latest_risk = latest.risk_level
-        latest_time = latest.created_at
+        if not latest_prediction:
+            return jsonify({
+                "success": True,
+                "status": "no_data",
+                "message": "No prediction history found",
+                "latest_risk": None,
+                "latest": None,
+                "probability": 0
+            }), 200
 
+        # FIX: probability is already saved as percentage (0-100)
+        probability_percent = round(latest_prediction.probability or 0, 1)
+
+        # Trend logic
+        second_latest = (
+            Prediction.query
+            .filter_by(user_id=user_id)
+            .order_by(Prediction.created_at.desc())
+            .offset(1)
+            .first()
+        )
         trend = "stable"
-        if len(predictions) > 1:
-            prev = predictions[1]
-            if latest_prob is not None and prev.probability is not None:
-                # compare numeric probabilities
-                if latest_prob < prev.probability - 0.02:
-                    trend = "improving"
-                elif latest_prob > prev.probability + 0.02:
-                    trend = "worsening"
-                else:
-                    trend = "stable"
+        if second_latest and second_latest.probability is not None:
+            prev = second_latest.probability
+            curr = latest_prediction.probability
+            diff = curr - prev
+            if diff < -5:
+                trend = "improving"
+            elif diff > 5:
+                trend = "worsening"
 
-        latest_record = latest.to_dict() if latest else None
-
-        return jsonify({
+        response_data = {
             "success": True,
             "status": trend,
-            "latest": latest_record,
-            "probability": latest_prob * 100 if latest_prob else 0,  # Convert to percentage for display
-            "latest_risk": latest_risk,
-            "latest_time": latest_time.isoformat() if latest_time else None
-        }), 200
+            "latest_risk": latest_prediction.risk_level,
+            "probability": probability_percent,
+            "latest_time": latest_prediction.created_at.isoformat(),
+            "latest": {
+                "bmi": round(latest_prediction.bmi, 1) if latest_prediction.bmi else None,
+                "age": latest_prediction.age,
+                "systolic_bp": latest_prediction.systolic_bp,
+                "diastolic_bp": latest_prediction.diastolic_bp,
+                "cholesterol": latest_prediction.cholesterol,
+                "glucose": latest_prediction.glucose,
+                "heart_rate": latest_prediction.heart_rate,
+                "risk_level": latest_prediction.risk_level,
+                "probability": probability_percent
+            }
+        }
+
+        logging.info("FINAL RESPONSE SENT TO FRONTEND:")
+        logging.info(json.dumps(response_data, indent=2, default=str))
+        return jsonify(response_data), 200
 
     except Exception as e:
-        traceback.print_exc()
-        return jsonify({"success": False, "error": str(e)}), 500
+        logging.error(f"Error in /api/status/{user_id}: {str(e)}", exc_info=True)
+        return jsonify({"success": False, "error": "Internal server error"}), 500
 
 @app.route('/api/chatbot', methods=['POST'])
 def api_chatbot():
